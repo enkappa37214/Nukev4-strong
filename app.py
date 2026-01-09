@@ -108,10 +108,8 @@ st.markdown(f"""
     header[data-testid="stHeader"] {{
         background-color: {COLORS['matte_black']} !important;
     }}
-</style>
-""", unsafe_allow_html=True)
 
-/* =========================================================
+   /* =========================================================
    LIGHT THEME MENU & SETTINGS TEXT FIX (FINAL)
    ========================================================= */
 
@@ -143,6 +141,9 @@ ul[role="listbox"] li {
     background-color: #262730 !important;
     color: #FAFAFA !important;
 }
+</style>
+""", unsafe_allow_html=True)
+
 
 # ==========================================================
 # SYSTEM CONFIGURATION
