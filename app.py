@@ -7,7 +7,7 @@ import math
 st.set_page_config(page_title="Nukeproof Mega v4 Calculator", page_icon="⚙️", layout="centered")
 
 # ==========================================================
-# COLORS / CSS (HARDENED FOR DROPDOWNS)
+# COLORS / CSS (HARDENED FOR MENUS)
 # ==========================================================
 COLORS = {
     "petrol_blue": "#005F60",
@@ -20,13 +20,13 @@ COLORS = {
 
 st.markdown(f"""
 <style>
-    /* 1. FORCE DARK BACKGROUND (Global) */
+    /* 1. GLOBAL BACKGROUND & TEXT */
     .stApp {{
         background-color: {COLORS['matte_black']};
         color: {COLORS['brushed_silver']};
     }}
     
-    /* 2. HEADERS & TEXT */
+    /* 2. HEADERS */
     h1, h2, h3, h4, h5, h6 {{ color: {COLORS['petrol_blue']} !important; }}
     p, label, span, div {{ color: {COLORS['brushed_silver']}; }}
     
@@ -43,7 +43,7 @@ st.markdown(f"""
         color: #A0A0A0 !important; 
     }}
 
-    /* 4. INPUTS: SELECTBOX & NUMBER INPUT (Collapsed State) */
+    /* 4. INPUT WIDGETS */
     .stSelectbox div[data-baseweb="select"] > div, 
     .stNumberInput input, 
     .stTextInput input {{
@@ -51,20 +51,25 @@ st.markdown(f"""
         color: {COLORS['brushed_silver']} !important;
         border: 1px solid {COLORS['slate_grey']};
     }}
-    
-    /* 5. INPUTS: DROPDOWN MENUS (The Light Mode Fix) */
-    div[data-baseweb="popover"], div[data-baseweb="menu"], ul {{
+
+    /* 5. FIX: HAMBURGER MENU & DROPDOWNS (The White-on-White Fix) */
+    /* Forces the menu container to be dark grey */
+    div[data-baseweb="popover"] > div, 
+    div[data-baseweb="menu"], 
+    ul[data-testid="main-menu-list"] {{
         background-color: {COLORS['panel_grey']} !important;
         color: {COLORS['brushed_silver']} !important;
     }}
     
-    /* Options in the list */
-    li[role="option"] {{
+    /* Forces the text inside the menu to be light */
+    div[data-baseweb="popover"] span, 
+    div[data-baseweb="popover"] li {{
         color: {COLORS['brushed_silver']} !important;
+        background-color: transparent !important;
     }}
-    
-    /* Selected/Hover option */
-    li[aria-selected="true"], li[role="option"]:hover {{
+
+    /* Hover effect for menu items */
+    li[role="option"]:hover, li:hover {{
         background-color: {COLORS['slate_grey']} !important;
     }}
 
@@ -84,6 +89,11 @@ st.markdown(f"""
         color: {COLORS['brushed_silver']} !important;
         font-weight: 600;
         border: 1px solid {COLORS['slate_grey']};
+    }}
+    
+    /* 8. HEADER BAR (Top of screen) */
+    header[data-testid="stHeader"] {{
+        background-color: {COLORS['matte_black']} !important;
     }}
 </style>
 """, unsafe_allow_html=True)
@@ -134,7 +144,6 @@ def recommend_neopos(weight, style):
     return max(0, min(4, base))
 
 def get_fork_baseline(style, is_rec):
-    # Returns only the color name for display
     if is_rec or style == "Plush":
         return "Bronze", 12, 12, -1 
     if style in ["Flow / Jumps", "Dynamic"]:
@@ -217,7 +226,7 @@ def calculate_physics(weight, style, weather, is_rec, neopos_val):
 # UI
 # ==========================================================
 st.title("Nukeproof Mega v4 Calculator")
-st.markdown("### Engineering Logic v12.4")
+st.markdown("### Engineering Logic v12.5")
 
 # Inputs
 col1, col2 = st.columns(2)
