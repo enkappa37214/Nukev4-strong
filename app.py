@@ -120,7 +120,7 @@ def calculate_physics(weight, style, weather, is_rec, neopos_val):
     actual_sag_pct = (actual_sag_mm / CONFIG["SHOCK_STROKE_MM"]) * 100
     sag_error = actual_sag_pct - target_sag
 
-    # Rear Damping
+    # Rear Damping (Formula.mod)
     shock_reb = -10 + round((spring_rate - 400) / CONFIG["REBOUND_LBS_PER_CLICK"])
     comp_offset = 0
     if style in ["Alpine", "Steep / Tech"]: comp_offset = 2
@@ -149,6 +149,10 @@ def calculate_physics(weight, style, weather, is_rec, neopos_val):
     f_lsc = max(2, min(12, int(f_lsc)))
     f_lsr = max(2, min(19, int(f_lsr)))
 
+    # Fork High-Speed Compression (HSC)
+    # Start at 12 clicks out by default
+    f_hsc = 12
+
     # Tyres
     t_mod = (weight - 72) * CONFIG["PSI_PER_KG"]
     f_psi_tyre = CONFIG["BASE_FRONT_PSI"] + t_mod
@@ -162,6 +166,7 @@ def calculate_physics(weight, style, weather, is_rec, neopos_val):
         "shock_lsc": abs(shock_comp), "shock_lsr": abs(shock_reb),
         "fork_psi": fork_psi, "fork_valve": f_valve,
         "fork_lsc": abs(f_lsc), "fork_lsr": abs(f_lsr),
+        "fork_hsc": f_hsc,
         "brake_bias": brake_bias, "brake_clicks": brake_clicks,
         "f_tyre": f_psi_tyre, "r_tyre": r_psi_tyre,
         "neopos": neopos_val
@@ -171,7 +176,7 @@ def calculate_physics(weight, style, weather, is_rec, neopos_val):
 # UI LAYOUT
 # ==========================================================
 st.title("Nukeproof Mega v4 Calculator")
-st.markdown("### Engineering Logic v11.4")
+st.markdown("### Engineering Logic v11.5")
 
 # --- Inputs ---
 with st.container():
@@ -182,9 +187,11 @@ with st.container():
     with col2:
         style = st.selectbox("Riding Style", options=list(SAG_DEFAULTS.keys()), index=3)
         weather = st.selectbox("Weather", options=["Standard", "Cold", "Rain / Wet"])
-        # Auto Neopos
+        # Neopos selection: first auto, then 0-4
         neopos_auto = recommend_neopos(weight, style, CONFIG["BASE_FORK_PSI"])
-        neopos_val = st.slider("Neopos Tokens (0 = auto)", 0, CONFIG["NEOPOS_MAX"], value=int(neopos_auto))
+        neopos_options = ["Auto"] + list(range(CONFIG["NEOPOS_MAX"]+1))
+        selected_neopos = st.selectbox("Neopos Tokens", options=neopos_options, index=0)
+        neopos_val = neopos_auto if selected_neopos=="Auto" else selected_neopos
 
 # --- Calculation ---
 data = calculate_physics(weight, style, weather, is_rec, neopos_val)
@@ -199,7 +206,7 @@ with st.expander("Rear Suspension (Formula Mod)", expanded=True):
     c1, c2, c3 = st.columns(3)
     c1.metric("Spring Rate", f"{data['spring_rate']} lb", delta=f"Raw: {data['raw_rate']:.1f} lb")
     c2.metric("Target Sag", f"{data['target_sag']}%", f"Actual: {data['actual_sag']:.1f}%")
-    c3.metric("Sag Error", f"{data['sag_error']:+.1f}%", help="Pitch correction applied to fork")
+    c3.metric("Sag Error", f"{data['sag_error']:+.1f}%")
     st.markdown("---")
     d1, d2 = st.columns(2)
     d1.metric("LSC (Compression)", f"{data['shock_lsc']} OUT")
@@ -207,9 +214,10 @@ with st.expander("Rear Suspension (Formula Mod)", expanded=True):
 
 # Fork Section
 with st.expander("Fork (Selva V)", expanded=True):
-    c1, c2 = st.columns(2)
-    c1.metric("Air Pressure", f"{data['fork_psi']:.1f} PSI", delta="±1.0 PSI", delta_color="off")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Air Pressure", f"{data['fork_psi']:.1f} PSI", delta="±1.0 PSI")
     c2.metric("CTS Valve", data['fork_valve'])
+    c3.metric("HSC", f"{data['fork_hsc']} OUT")
     st.markdown("---")
     d1, d2 = st.columns(2)
     d1.metric("LSC (Compression)", f"{data['fork_lsc']} OUT", help=f"Brake Bias: {data['brake_bias']} | Neopos: {data['neopos']}")
