@@ -7,7 +7,7 @@ import math
 st.set_page_config(page_title="Nukeproof Mega v4 Calculator", page_icon="⚙️", layout="centered")
 
 # ==========================================================
-# COLORS / CSS (HARDENED FOR SYSTEM INDEPENDENCE)
+# COLORS / CSS (HARDENED FOR DROPDOWNS)
 # ==========================================================
 COLORS = {
     "petrol_blue": "#005F60",
@@ -20,15 +20,15 @@ COLORS = {
 
 st.markdown(f"""
 <style>
-    /* 1. FORCE BACKGROUND (Overrides System Light Mode) */
+    /* 1. FORCE DARK BACKGROUND (Global) */
     .stApp {{
         background-color: {COLORS['matte_black']};
         color: {COLORS['brushed_silver']};
     }}
     
-    /* 2. TEXT & HEADERS */
+    /* 2. HEADERS & TEXT */
     h1, h2, h3, h4, h5, h6 {{ color: {COLORS['petrol_blue']} !important; }}
-    p, label, span {{ color: {COLORS['brushed_silver']} !important; }}
+    p, label, span, div {{ color: {COLORS['brushed_silver']}; }}
     
     /* 3. METRICS (Gold Accents) */
     div[data-testid="stMetricValue"] {{
@@ -40,10 +40,10 @@ st.markdown(f"""
         font-size: 0.9em;
     }}
     div[data-testid="stMetricLabel"] {{
-        color: #A0A0A0 !important; /* Dimmed label */
+        color: #A0A0A0 !important; 
     }}
 
-    /* 4. INPUT WIDGETS (Force Dark Panels) */
+    /* 4. INPUTS: SELECTBOX & NUMBER INPUT (Collapsed State) */
     .stSelectbox div[data-baseweb="select"] > div, 
     .stNumberInput input, 
     .stTextInput input {{
@@ -52,24 +52,38 @@ st.markdown(f"""
         border: 1px solid {COLORS['slate_grey']};
     }}
     
-    /* 5. SLIDERS (Petrol Blue Track) */
+    /* 5. INPUTS: DROPDOWN MENUS (The Light Mode Fix) */
+    div[data-baseweb="popover"], div[data-baseweb="menu"], ul {{
+        background-color: {COLORS['panel_grey']} !important;
+        color: {COLORS['brushed_silver']} !important;
+    }}
+    
+    /* Options in the list */
+    li[role="option"] {{
+        color: {COLORS['brushed_silver']} !important;
+    }}
+    
+    /* Selected/Hover option */
+    li[aria-selected="true"], li[role="option"]:hover {{
+        background-color: {COLORS['slate_grey']} !important;
+    }}
+
+    /* 6. SLIDERS & BUTTONS */
     .stSlider [data-baseweb="slider"] {{
         color: {COLORS['petrol_blue']};
     }}
+    .stButton>button {{
+        background-color: {COLORS['petrol_blue']};
+        color: white !important;
+        border: none;
+    }}
 
-    /* 6. EXPANDERS */
+    /* 7. EXPANDERS */
     .streamlit-expanderHeader {{
         background-color: {COLORS['panel_grey']};
         color: {COLORS['brushed_silver']} !important;
         font-weight: 600;
         border: 1px solid {COLORS['slate_grey']};
-    }}
-    
-    /* 7. BUTTONS */
-    .stButton>button {{
-        background-color: {COLORS['petrol_blue']};
-        color: white !important;
-        border: none;
     }}
 </style>
 """, unsafe_allow_html=True)
@@ -203,7 +217,7 @@ def calculate_physics(weight, style, weather, is_rec, neopos_val):
 # UI
 # ==========================================================
 st.title("Nukeproof Mega v4 Calculator")
-st.markdown("### Engineering Logic v12.3")
+st.markdown("### Engineering Logic v12.4")
 
 # Inputs
 col1, col2 = st.columns(2)
