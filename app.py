@@ -7,12 +7,12 @@ import math
 st.set_page_config(page_title="Nukeproof Mega v4 Calculator", page_icon="⚙️", layout="centered")
 
 # ==========================================================
-# COLORS / CSS (HARDENED FOR MENUS)
+# COLORS / CSS (FINAL MENU FIX)
 # ==========================================================
 COLORS = {
     "petrol_blue": "#005F60",
     "matte_black": "#0E1117",  # Deepest grey/black
-    "panel_grey": "#262730",   # Widget background
+    "panel_grey": "#262730",   # Widget/Menu background
     "brushed_silver": "#FAFAFA", # High contrast text
     "gold_bronze": "#D4AF37",
     "slate_grey": "#4A4D4F"
@@ -30,7 +30,7 @@ st.markdown(f"""
     h1, h2, h3, h4, h5, h6 {{ color: {COLORS['petrol_blue']} !important; }}
     p, label, span, div {{ color: {COLORS['brushed_silver']}; }}
     
-    /* 3. METRICS (Gold Accents) */
+    /* 3. METRICS */
     div[data-testid="stMetricValue"] {{
         color: {COLORS['gold_bronze']} !important;
         font-weight: 700;
@@ -52,28 +52,41 @@ st.markdown(f"""
         border: 1px solid {COLORS['slate_grey']};
     }}
 
-    /* 5. FIX: HAMBURGER MENU & DROPDOWNS (The White-on-White Fix) */
-    /* Forces the menu container to be dark grey */
-    div[data-baseweb="popover"] > div, 
-    div[data-baseweb="menu"], 
-    ul[data-testid="main-menu-list"] {{
+    /* 5. CRITICAL FIX: FLOATING MENUS (Hamburger & Dropdowns) */
+    div[data-baseweb="popover"] {{
         background-color: {COLORS['panel_grey']} !important;
-        color: {COLORS['brushed_silver']} !important;
     }}
-    
-    /* Forces the text inside the menu to be light */
+    div[data-baseweb="popover"] > div {{
+        background-color: {COLORS['panel_grey']} !important;
+    }}
+    /* Force text inside menus to be light */
     div[data-baseweb="popover"] span, 
-    div[data-baseweb="popover"] li {{
+    div[data-baseweb="popover"] li,
+    div[data-baseweb="popover"] p {{
         color: {COLORS['brushed_silver']} !important;
-        background-color: transparent !important;
     }}
-
-    /* Hover effect for menu items */
+    /* Hover effects in menus */
     li[role="option"]:hover, li:hover {{
         background-color: {COLORS['slate_grey']} !important;
     }}
 
-    /* 6. SLIDERS & BUTTONS */
+    /* 6. CRITICAL FIX: MODALS (Settings Dialog) */
+    div[role="dialog"] {{
+        background-color: {COLORS['panel_grey']} !important;
+        color: {COLORS['brushed_silver']} !important;
+    }}
+    div[role="dialog"] h2, 
+    div[role="dialog"] label, 
+    div[role="dialog"] span, 
+    div[role="dialog"] p {{
+        color: {COLORS['brushed_silver']} !important;
+    }}
+    /* Close button in modal */
+    div[role="dialog"] button {{
+        color: {COLORS['brushed_silver']} !important;
+    }}
+
+    /* 7. SLIDERS & BUTTONS */
     .stSlider [data-baseweb="slider"] {{
         color: {COLORS['petrol_blue']};
     }}
@@ -83,7 +96,7 @@ st.markdown(f"""
         border: none;
     }}
 
-    /* 7. EXPANDERS */
+    /* 8. EXPANDERS */
     .streamlit-expanderHeader {{
         background-color: {COLORS['panel_grey']};
         color: {COLORS['brushed_silver']} !important;
@@ -91,7 +104,7 @@ st.markdown(f"""
         border: 1px solid {COLORS['slate_grey']};
     }}
     
-    /* 8. HEADER BAR (Top of screen) */
+    /* 9. HEADER BAR */
     header[data-testid="stHeader"] {{
         background-color: {COLORS['matte_black']} !important;
     }}
@@ -226,7 +239,7 @@ def calculate_physics(weight, style, weather, is_rec, neopos_val):
 # UI
 # ==========================================================
 st.title("Nukeproof Mega v4 Calculator")
-st.markdown("### Engineering Logic v12.5")
+st.markdown("### Engineering Logic v12.6")
 
 # Inputs
 col1, col2 = st.columns(2)
