@@ -131,7 +131,7 @@ CONFIG = {
     "REBOUND_LBS_PER_CLICK": 35,
     "BASE_FORK_PSI": 63.0,
     "FORK_PSI_PER_KG": 0.85,
-    "SAG_PITCH_GAIN": 0.75,
+    "SAG_PITCH_GAIN": 0.5,        # CHANGED: Reduced from 0.75 to 0.5 to prevent chasing loop
     "NEG_SPRING_THRESHOLD": 70,
     "NEG_SPRING_GAIN": 0.6,
     "BRAKE_SUPPORT_GAIN": 1.0,
@@ -159,7 +159,14 @@ def recommend_neopos(weight, style):
     if style == "Plush": base -= 1
     if weight > 75: base += 1
     if weight < 70: base -= 1
-    return max(0, min(4, base))
+    
+    val = max(0, min(4, base))
+    
+    # CHANGED: Cap at 3 for all modes except 'Flow / Jumps'
+    if style != "Flow / Jumps" and val > 3:
+        val = 3
+        
+    return val
 
 def get_fork_baseline(style, is_rec):
     if is_rec or style == "Plush":
@@ -167,7 +174,8 @@ def get_fork_baseline(style, is_rec):
     if style in ["Flow / Jumps", "Dynamic"]:
         return "Gold", 10, 11, 0
     if style in ["Alpine", "Steep / Tech"]:
-        return "Purple", 8, 10, 2
+        # CHANGED: Brake bias set to 0 (was 2) to avoid stacking with Purple valve
+        return "Purple", 8, 10, 0 
     return "Bronze", 11, 11, 0
 
 def calculate_physics(weight, style, weather, is_rec, neopos_val):
@@ -244,7 +252,7 @@ def calculate_physics(weight, style, weather, is_rec, neopos_val):
 # UI
 # ==========================================================
 st.title("Nukeproof Mega v4 Calculator")
-st.markdown("### Engineering Logic v12.7")
+st.markdown("### Engineering Logic v12.8")
 
 # Inputs
 col1, col2 = st.columns(2)
