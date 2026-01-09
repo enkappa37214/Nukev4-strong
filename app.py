@@ -58,7 +58,7 @@ SAG_DEFAULTS = {
     "Alpine": 32,
     "Trail": 33,
     "Steep / Tech": 34,
-    "Plush": 35
+    "Plush": 35,
 }
 
 # ==========================================================
@@ -76,13 +76,14 @@ def recommend_neopos(weight, style):
 # FORK VALVE SELECTION
 # ==========================================================
 def get_fork_baseline(style, is_rec):
+    # Returns only the color name for display
     if is_rec or style == "Plush":
-        return "Bronze (Velvet)", 12, 12, -1 
+        return "Bronze", 12, 12, -1 
     if style in ["Flow / Jumps", "Dynamic"]:
-        return "Gold (Standard)", 10, 11, 0
+        return "Gold", 10, 11, 0
     if style in ["Alpine", "Steep / Tech"]:
-        return "Purple (Digressive)", 8, 10, 2
-    return "Bronze (Velvet)", 11, 11, 0
+        return "Purple", 8, 10, 2
+    return "Bronze", 11, 11, 0
 
 # ==========================================================
 # PHYSICS CALCULATION
@@ -133,7 +134,7 @@ def calculate_physics(weight, style, weather, is_rec, neopos_val):
     f_valve, base_lsc, base_lsr, brake_bias = get_fork_baseline(style, is_rec)
     brake_clicks = min(CONFIG["BRAKE_SUPPORT_MAX"], brake_bias * CONFIG["BRAKE_SUPPORT_GAIN"])
     
-    # FIXED LOGIC: Removed Neopos penalty. Support comes from tokens, damping remains for chassis.
+    # LSC Logic (Decoupled from Neopos for correct physics)
     f_lsc = base_lsc - brake_clicks 
     
     reb_correction = round((fork_psi - 66) / 5)
@@ -162,7 +163,7 @@ def calculate_physics(weight, style, weather, is_rec, neopos_val):
 # UI
 # ==========================================================
 st.title("Nukeproof Mega v4 Calculator")
-st.markdown("### Engineering Logic v12.1")
+st.markdown("### Engineering Logic v12.2")
 
 # Inputs
 col1, col2 = st.columns(2)
@@ -199,20 +200,20 @@ with st.expander("Rear Suspension (Formula Mod)", expanded=True):
     col_c.metric("Shock LSC", f"{data['shock_lsc']} OUT")
     col_d.metric("Shock LSR", f"{data['shock_lsr']} OUT")
 
-
-
-# Fork Section
+# Fork Section (RESTRUCTURED)
 with st.expander("Fork (Selva V)", expanded=True):
-    col_a, col_b = st.columns(2)
-    col_a.metric("Air Pressure", f"{data['fork_psi']:.1f} PSI", delta="±1.0 PSI")
-    col_b.metric("CTS Valve", data['fork_valve'])
+    # Row 1: Air Spring & Hardware (PSI, Valve, Neopos)
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Air Pressure", f"{data['fork_psi']:.1f} PSI", delta="±1.0 PSI")
+    c2.metric("CTS Valve", data['fork_valve'])
+    c3.metric("Neopos", f"{data['neopos_val']}") # Matched style
+    
     st.markdown("---")
-    col_c, col_d = st.columns(2)
-    col_c.metric("Fork LSC", f"{data['fork_lsc']} OUT", help=f"Brake Bias: {data['brake_clicks']}")
-    col_d.metric("Fork LSR", f"{data['fork_lsr']} OUT")
-    st.caption(f"Neopos Tokens: {data['neopos_val']}")
-
-
+    
+    # Row 2: Damping (Knobs)
+    d1, d2 = st.columns(2)
+    d1.metric("Fork LSC", f"{data['fork_lsc']} OUT", help=f"12 Clicks Max. Bias: {data['brake_clicks']}")
+    d2.metric("Fork LSR", f"{data['fork_lsr']} OUT", help="19 Clicks Max")
 
 # Tyres
 with st.expander("Tyres (SuperGravity)", expanded=True):
