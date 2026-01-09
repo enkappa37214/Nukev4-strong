@@ -7,23 +7,70 @@ import math
 st.set_page_config(page_title="Nukeproof Mega v4 Calculator", page_icon="⚙️", layout="centered")
 
 # ==========================================================
-# COLORS / CSS
+# COLORS / CSS (HARDENED FOR SYSTEM INDEPENDENCE)
 # ==========================================================
 COLORS = {
     "petrol_blue": "#005F60",
-    "matte_black": "#1A1A1A",
-    "brushed_silver": "#BFC1C2",
-    "gold_bronze": "#A67C37",
+    "matte_black": "#0E1117",  # Deepest grey/black
+    "panel_grey": "#262730",   # Widget background
+    "brushed_silver": "#FAFAFA", # High contrast text
+    "gold_bronze": "#D4AF37",
     "slate_grey": "#4A4D4F"
 }
 
 st.markdown(f"""
 <style>
-    .stApp {{ background-color: {COLORS['matte_black']}; color: {COLORS['brushed_silver']}; }}
-    div[data-testid="stMetricValue"] {{ color: {COLORS['gold_bronze']} !important; font-weight: bold; }}
-    div[data-testid="stMetricDelta"] {{ color: {COLORS['brushed_silver']} !important; font-size: 0.85em; }}
-    .stButton>button {{ background-color: {COLORS['petrol_blue']}; color: white; }}
-    .stExpanderHeader {{ background-color: {COLORS['slate_grey']}; color: white; }}
+    /* 1. FORCE BACKGROUND (Overrides System Light Mode) */
+    .stApp {{
+        background-color: {COLORS['matte_black']};
+        color: {COLORS['brushed_silver']};
+    }}
+    
+    /* 2. TEXT & HEADERS */
+    h1, h2, h3, h4, h5, h6 {{ color: {COLORS['petrol_blue']} !important; }}
+    p, label, span {{ color: {COLORS['brushed_silver']} !important; }}
+    
+    /* 3. METRICS (Gold Accents) */
+    div[data-testid="stMetricValue"] {{
+        color: {COLORS['gold_bronze']} !important;
+        font-weight: 700;
+    }}
+    div[data-testid="stMetricDelta"] {{
+        color: {COLORS['brushed_silver']} !important;
+        font-size: 0.9em;
+    }}
+    div[data-testid="stMetricLabel"] {{
+        color: #A0A0A0 !important; /* Dimmed label */
+    }}
+
+    /* 4. INPUT WIDGETS (Force Dark Panels) */
+    .stSelectbox div[data-baseweb="select"] > div, 
+    .stNumberInput input, 
+    .stTextInput input {{
+        background-color: {COLORS['panel_grey']} !important;
+        color: {COLORS['brushed_silver']} !important;
+        border: 1px solid {COLORS['slate_grey']};
+    }}
+    
+    /* 5. SLIDERS (Petrol Blue Track) */
+    .stSlider [data-baseweb="slider"] {{
+        color: {COLORS['petrol_blue']};
+    }}
+
+    /* 6. EXPANDERS */
+    .streamlit-expanderHeader {{
+        background-color: {COLORS['panel_grey']};
+        color: {COLORS['brushed_silver']} !important;
+        font-weight: 600;
+        border: 1px solid {COLORS['slate_grey']};
+    }}
+    
+    /* 7. BUTTONS */
+    .stButton>button {{
+        background-color: {COLORS['petrol_blue']};
+        color: white !important;
+        border: none;
+    }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -62,7 +109,7 @@ SAG_DEFAULTS = {
 }
 
 # ==========================================================
-# NEOPOS RECOMMENDATION FUNCTION
+# LOGIC FUNCTIONS
 # ==========================================================
 def recommend_neopos(weight, style):
     base = 0
@@ -72,9 +119,6 @@ def recommend_neopos(weight, style):
     if weight < 70: base -= 1
     return max(0, min(4, base))
 
-# ==========================================================
-# FORK VALVE SELECTION
-# ==========================================================
 def get_fork_baseline(style, is_rec):
     # Returns only the color name for display
     if is_rec or style == "Plush":
@@ -85,9 +129,6 @@ def get_fork_baseline(style, is_rec):
         return "Purple", 8, 10, 2
     return "Bronze", 11, 11, 0
 
-# ==========================================================
-# PHYSICS CALCULATION
-# ==========================================================
 def calculate_physics(weight, style, weather, is_rec, neopos_val):
     # Kinematics
     target_sag = 35 if is_rec else SAG_DEFAULTS.get(style, 33)
@@ -134,7 +175,6 @@ def calculate_physics(weight, style, weather, is_rec, neopos_val):
     f_valve, base_lsc, base_lsr, brake_bias = get_fork_baseline(style, is_rec)
     brake_clicks = min(CONFIG["BRAKE_SUPPORT_MAX"], brake_bias * CONFIG["BRAKE_SUPPORT_GAIN"])
     
-    # LSC Logic (Decoupled from Neopos for correct physics)
     f_lsc = base_lsc - brake_clicks 
     
     reb_correction = round((fork_psi - 66) / 5)
@@ -163,7 +203,7 @@ def calculate_physics(weight, style, weather, is_rec, neopos_val):
 # UI
 # ==========================================================
 st.title("Nukeproof Mega v4 Calculator")
-st.markdown("### Engineering Logic v12.2")
+st.markdown("### Engineering Logic v12.3")
 
 # Inputs
 col1, col2 = st.columns(2)
@@ -200,13 +240,13 @@ with st.expander("Rear Suspension (Formula Mod)", expanded=True):
     col_c.metric("Shock LSC", f"{data['shock_lsc']} OUT")
     col_d.metric("Shock LSR", f"{data['shock_lsr']} OUT")
 
-# Fork Section (RESTRUCTURED)
+# Fork Section
 with st.expander("Fork (Selva V)", expanded=True):
     # Row 1: Air Spring & Hardware (PSI, Valve, Neopos)
     c1, c2, c3 = st.columns(3)
     c1.metric("Air Pressure", f"{data['fork_psi']:.1f} PSI", delta="±1.0 PSI")
     c2.metric("CTS Valve", data['fork_valve'])
-    c3.metric("Neopos", f"{data['neopos_val']}") # Matched style
+    c3.metric("Neopos", f"{data['neopos_val']}") 
     
     st.markdown("---")
     
