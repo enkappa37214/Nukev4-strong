@@ -111,6 +111,39 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
+/* =========================================================
+   LIGHT THEME MENU & SETTINGS TEXT FIX (FINAL)
+   ========================================================= */
+
+/* Hamburger / kebab menu items */
+div[data-baseweb="popover"] button,
+div[data-baseweb="popover"] a,
+div[data-baseweb="popover"] [role="menuitem"] {
+    color: #FAFAFA !important;
+}
+
+/* Hover / active states */
+div[data-baseweb="popover"] button:hover,
+div[data-baseweb="popover"] a:hover,
+div[data-baseweb="popover"] [role="menuitem"]:hover {
+    background-color: #4A4D4F !important;
+    color: #FAFAFA !important;
+}
+
+/* Settings modal text (Light theme fix) */
+div[role="dialog"] button,
+div[role="dialog"] a,
+div[role="dialog"] label,
+div[role="dialog"] span {
+    color: #FAFAFA !important;
+}
+
+/* Dropdown option list (Light theme bug) */
+ul[role="listbox"] li {
+    background-color: #262730 !important;
+    color: #FAFAFA !important;
+}
+
 # ==========================================================
 # SYSTEM CONFIGURATION
 # ==========================================================
