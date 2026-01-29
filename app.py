@@ -65,7 +65,7 @@ CONFIG = {
 
 STYLES = {
     "Alpine Epic":       {"sag": 30.0, "bias": 65, "lsc_offset": 2, "desc": "Efficiency focus. Neutral bias."},
-    "Flow / Park":       {"sag": 28.0, "bias": 63, "lsc_offset": 4, "desc": "Max Support. Forward bias."}, # Tighter sag for park
+    "Flow / Park":       {"sag": 30.0, "bias": 63, "lsc_offset": 4, "desc": "Max Support. Forward bias."},
     "Dynamic":           {"sag": 31.0, "bias": 65, "lsc_offset": 0, "desc": "Balanced Enduro bias."},
     "Trail":             {"sag": 32.0, "bias": 65, "lsc_offset": 0, "desc": "Chatter focus."},
     "Steep / Tech":      {"sag": 33.0, "bias": 68, "lsc_offset": 1, "desc": "Geometry focus. Rearward bias."},
@@ -236,7 +236,7 @@ with col_style:
 
 with col_sag:
     if "sag_slider" not in st.session_state: st.session_state.sag_slider = 31.0
-    target_sag = st.slider("Target Sag (%)", 25.0, 35.0, key="sag_slider", step=0.5, help="Nukeproof Kinematic Limit")
+    target_sag = st.slider("Target Sag (%)", 30.0, 35.0, key="sag_slider", step=0.5, help="Nukeproof Kinematic Limit")
 
 with col_bias:
     if "bias_slider" not in st.session_state: st.session_state.bias_slider = 65
