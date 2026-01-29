@@ -27,7 +27,8 @@ DEFAULTS = {
     "bias_slider": 65,
     "spring_override": "Auto",
     "neopos_override": "Auto",
-    "valve_override": "Auto"
+    "valve_override": "Auto",
+    "shock_valve_override": "Auto" # [NEW] Shock CTS Override
 }
 
 # --- CALLBACKS ---
@@ -101,7 +102,7 @@ VALVE_SPECS = {
     "Red":    {"support": 6, "ramp": 7}, 
 }
 
-# [CORRECTION] Inverted LSC Offsets to match Formula Logic (Low # = Stiff, High # = Soft)
+# Inverted LSC Offsets to match Formula Logic (Low # = Stiff, High # = Soft)
 STYLES = {
     "Alpine Epic":       {"sag": 30.0, "bias": 65, "lsc_offset": -1, "desc": "Efficiency focus. Neutral bias."},
     "Flow / Park":       {"sag": 30.0, "bias": 63, "lsc_offset": -3, "desc": "Max Support. Forward bias."},
@@ -116,6 +117,7 @@ STYLES = {
 # ==========================================================
 
 def get_cts_valve(style, weight, is_recovery):
+    # Fork CTS Logic
     if is_recovery: return "Bronze" 
     
     if style == "Flow / Park": return "Blue"
@@ -128,6 +130,19 @@ def get_cts_valve(style, weight, is_recovery):
         return "Purple"
     return "Gold"
 
+def get_shock_cts_ideal(style, weight, is_recovery):
+    # [NEW] Shock CTS Logic (The Brain)
+    if is_recovery: return "Gold"
+    
+    if style == "Flow / Park": return "Blue"
+    if style == "Plush": return "Gold"
+    
+    # Weight Logic
+    if weight > 90: return "Green" # Heavy riders
+    if weight < 70: return "Gold"  # Light riders
+    
+    return "Orange" # Standard Mod valve
+
 def get_neopos_count(weight, style, is_recovery):
     if is_recovery: return 1
     val = 1
@@ -137,13 +152,14 @@ def get_neopos_count(weight, style, is_recovery):
     if weight < 65: val = 0
     return max(0, min(3, val))
 
-def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_manual, altitude, weather, is_recovery, neopos_select, spring_override, valve_override):
+def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_manual, altitude, weather, is_recovery, neopos_select, spring_override, valve_override, shock_valve_override):
     s_data = STYLES[style_key]
     
     # --- 1. CONFIGURATION ---
     neopos_rec = get_neopos_count(rider_kg, style_key, is_recovery)
-    valve_ideal = get_cts_valve(style_key, rider_kg, is_recovery)
     
+    # Fork Valve
+    valve_ideal = get_cts_valve(style_key, rider_kg, is_recovery)
     if valve_override == "Auto":
         valve_active = valve_ideal
         valve_mismatch = False
@@ -151,17 +167,32 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
         valve_active = valve_override
         valve_mismatch = (valve_active != valve_ideal)
 
+    # [NEW] Shock Valve Configuration
+    shock_valve_ideal = get_shock_cts_ideal(style_key, rider_kg, is_recovery)
+    if shock_valve_override == "Auto":
+        shock_valve_active = shock_valve_ideal
+        shock_valve_mismatch = False
+    else:
+        shock_valve_active = shock_valve_override
+        shock_valve_mismatch = (shock_valve_active != shock_valve_ideal)
+
     if neopos_select == "Auto": 
         neopos_installed = neopos_rec
     else: 
         neopos_installed = int(neopos_select)
 
-    # --- 2. VALVE DELTAS ---
+    # --- 2. VALVE DELTAS (Hydraulic Handshake) ---
+    # Fork
     ideal_scores = VALVE_SPECS.get(valve_ideal, VALVE_SPECS["Gold"])
     active_scores = VALVE_SPECS.get(valve_active, VALVE_SPECS["Gold"])
-    
     support_delta = active_scores["support"] - ideal_scores["support"] 
     ramp_delta = active_scores["ramp"] - ideal_scores["ramp"]      
+
+    # [NEW] Shock Deltas
+    # Default to Orange scores if ideal/active not found, as Orange is Mod standard
+    shock_ideal_scores = VALVE_SPECS.get(shock_valve_ideal, VALVE_SPECS["Orange"])
+    shock_active_scores = VALVE_SPECS.get(shock_valve_active, VALVE_SPECS["Orange"])
+    shock_support_delta = shock_active_scores["support"] - shock_ideal_scores["support"]
 
     # --- 3. SHOCK CALCULATIONS ---
     effective_bias_pct = bias_manual 
@@ -196,15 +227,20 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     reb_clicks = max(1, min(CONFIG["REBOUND_CLICKS_SHOCK"], reb_clicks))
     
     # Compression (17 Clicks)
-    # Stiff Spring (>0 mismatch) -> Add clicks (Soften)
+    # 1. Spring Mismatch Comp
     lsc_softening_clicks = int(rate_mismatch / 25) 
     
+    # 2. Chassis Balance Comp (Neopos)
     neopos_delta = neopos_installed - neopos_rec
     lsc_chassis_bal = 0
     if neopos_delta < 0: lsc_chassis_bal = -abs(neopos_delta)
     
+    # [NEW] 3. Shock Valve Compensation
+    # Stiffer Valve (Positive Delta) -> Add Clicks (Open/Soften)
+    lsc_shock_valve_offset = int(shock_support_delta * 1.5)
+
     # Base offset + corrections
-    base_lsc = 9 + s_data["lsc_offset"] + lsc_softening_clicks + lsc_chassis_bal
+    base_lsc = 9 + s_data["lsc_offset"] + lsc_softening_clicks + lsc_chassis_bal + lsc_shock_valve_offset
     
     if final_sag_pct > 32.0 and not is_recovery: base_lsc -= 1
     if weather == "Rain / Wet": base_lsc += 2
@@ -268,6 +304,8 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
         "fork_psi": final_psi,
         "fork_cts": valve_active,
         "fork_cts_ideal": valve_ideal,
+        "shock_cts": shock_valve_active,
+        "shock_cts_ideal": shock_valve_ideal,
         "fork_neopos": final_neopos_count,
         "neopos_rec": neopos_rec,
         "fork_reb": fork_reb,
@@ -275,7 +313,9 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
         "sag": final_sag_pct,
         "bias": effective_bias_pct,
         "valve_mismatch": valve_mismatch,
+        "shock_valve_mismatch": shock_valve_mismatch,
         "support_delta": support_delta,
+        "shock_support_delta": shock_support_delta,
         "ramp_delta": ramp_delta
     }
 
@@ -345,13 +385,24 @@ st.info("""
 with c1:
     st.subheader("Formula MOD (Coil)")
     
-    spring_options = ["Auto"] + [str(r) for r in range(300, 650, 5)] 
-    spring_override = st.selectbox(
-        "Actual Spring Rate (lbs)", 
-        options=spring_options, 
-        help="Select your installed Sprindex/Coil rate to adapt damping.",
-        key="spring_override"
-    )
+    sc1, sc2 = st.columns(2)
+    with sc1:
+        spring_options = ["Auto"] + [str(r) for r in range(300, 650, 5)] 
+        spring_override = st.selectbox(
+            "Actual Spring Rate (lbs)", 
+            options=spring_options, 
+            help="Select your installed Sprindex/Coil rate.",
+            key="spring_override"
+        )
+    with sc2:
+        # [NEW] Shock Valve Selector
+        shock_valve_options = ["Auto"] + list(VALVE_SPECS.keys())
+        shock_valve_select = st.selectbox(
+            "CTS Valve (Shock)",
+            options=shock_valve_options,
+            help="Select the valve installed in your shock.",
+            key="shock_valve_override"
+        )
 
 # --- RIGHT COLUMN (FORK) ---
 with c2:
@@ -375,7 +426,7 @@ with c2:
         )
 
 # --- RUN CALCULATION ---
-res = calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, target_sag, target_bias, altitude, weather, is_rec, neopos_select, spring_override, valve_select)
+res = calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, target_sag, target_bias, altitude, weather, is_rec, neopos_select, spring_override, valve_select, shock_valve_select)
 
 # --- DISPLAY RESULTS ---
 with c1:
@@ -388,7 +439,14 @@ with c1:
     d1.metric("Rebound", f"{res['shock_reb']}", "Clicks from CLOSED")
     d2.metric("Compression", f"{res['shock_lsc']}", "Clicks from CLOSED")
     
-    if res['active_rate'] != res['mod_rate']:
+    # [NEW] Shock CTS Mismatch Warnings
+    if res['shock_valve_mismatch']:
+        st.warning(f"⚠️ **Shock Compensation Active**")
+        st.caption(f"Valve: {res['shock_cts']} (Ideal: {res['shock_cts_ideal']})")
+        if res['shock_support_delta'] != 0:
+            action = "Opened" if res['shock_support_delta'] > 0 else "Closed"
+            st.caption(f"• LSC {action} to balance valve support.")
+    elif res['active_rate'] != res['mod_rate']:
          st.info("ℹ️ **Compensation:** Damping adjusted for spring rate mismatch.")
 
 with c2:
@@ -435,6 +493,7 @@ def generate_pdf(data):
     pdf.set_font("Arial", 'B', 12); pdf.cell(200, 10, "Formula MOD", ln=True)
     pdf.set_font("Arial", size=10)
     pdf.cell(200, 8, f"Sprindex Rate: {data['mod_rate']} lbs", ln=True)
+    pdf.cell(200, 8, f"Valve: {data['shock_cts']}", ln=True)
     pdf.cell(200, 8, f"Rebound: {data['shock_reb']} clicks", ln=True)
     pdf.cell(200, 8, f"Compression: {data['shock_lsc']} clicks", ln=True)
     
