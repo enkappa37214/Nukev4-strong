@@ -291,8 +291,18 @@ c1, c2 = st.columns(2)
 
 st.info("""
 **Damping Reference:** Settings are clicks from **FULLY CLOSED** (Clockwise ↻).  
+
+**Formula Mod (Shock):**
+* **Compression:** 17 Click Adjustment
+* **Rebound:** 13 Click Adjustment
+
+**Formula Selva V (Fork):**
+* **Compression:** 12 Click Adjustment (Global gain: Fine-tunes **HSC & LSC** together).
+* **CTS Valve:** Defines the damping **behavior** (Curve Profile).
+* **Rebound:** 21 Click Adjustment
+
 **0** = Max Damping (Stiff).  
-**13** = Min Damping (Soft).
+**Higher #** = Min Damping (Soft).
 """)
 
 # --- LEFT COLUMN (SHOCK) ---
