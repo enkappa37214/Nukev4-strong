@@ -81,12 +81,12 @@ CONFIG = {
     "LEV_RATIO_START": 2.90,
     "LEV_RATIO_COEFF": 0.00816,
     "MOD_FRICTION_CORRECTION": 1.05, # Validated: High volume bladder lacks IFP friction
-    "REBOUND_CLICKS_SHOCK": 13,
+    "REBOUND_CLICKS_SHOCK": 17, # [UPDATED] from 13 to 17
     "FORK_PSI_BASE_OFFSET": 65.0,
     "FORK_PSI_PER_KG": 0.88,
     "NEOPOS_PSI_DROP": 2.0,
     "ALTITUDE_PSI_DROP": 1.5,
-    "REBOUND_CLICKS_FORK": 21,
+    "REBOUND_CLICKS_FORK": 19, # [UPDATED] from 21 to 19
 }
 
 STYLES = {
@@ -164,8 +164,11 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     # 3. SHOCK DAMPING
     # Rebound: Heavier spring = Stiffer rebound (lower clicks)
     reb_clicks = 7 - int((active_rate - 450) / 50)
-    if weather == "Cold": reb_clicks += 2
-    reb_clicks = max(1, min(13, reb_clicks))
+    
+    # [UPDATED] Aggressive Cold Mode (+5 clicks)
+    if weather == "Cold (<5°C)": reb_clicks += 5 
+    
+    reb_clicks = max(1, min(CONFIG["REBOUND_CLICKS_SHOCK"], reb_clicks))
     
     # [FIX A] Damping Compensation Logic
     # Physics: Stiff Spring (>0 mismatch) requires LESS Damping (Softer).
@@ -185,7 +188,7 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     if weather == "Rain / Wet": base_lsc += 2
     if is_recovery: base_lsc = 12
         
-    lsc_clicks = max(1, min(13, base_lsc))
+    lsc_clicks = max(1, min(13, base_lsc)) # LSC is still 13 clicks max on Mod
     
     # 4. FORK PRESSURE & DAMPING
     base_psi = CONFIG["FORK_PSI_BASE_OFFSET"] + ((rider_kg - 75) * CONFIG["FORK_PSI_PER_KG"])
@@ -197,12 +200,19 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     
     final_psi = base_psi - (neopos_final * CONFIG["NEOPOS_PSI_DROP"]) - alt_penalty + psi_safety
     if is_recovery: final_psi = max(40, final_psi * 0.9)
+
+    # [UPDATED] Pressure Compensation for Cold
+    if weather == "Cold (<5°C)":
+        final_psi = final_psi * 1.05
     
     valve = "Bronze" if is_recovery else get_cts_valve(style_key, rider_kg, is_recovery)
     
     fork_reb = 10 + int((final_psi - 70) / 10)
-    if weather == "Cold": fork_reb += 2
-    fork_reb = max(2, min(21, fork_reb))
+    
+    # [UPDATED] Aggressive Cold Mode (+5 clicks)
+    if weather == "Cold (<5°C)": fork_reb += 5
+    
+    fork_reb = max(2, min(CONFIG["REBOUND_CLICKS_FORK"], fork_reb))
     
     lsc_fork_comp = 0
     if neopos_delta < 0: lsc_fork_comp = -abs(neopos_delta)
@@ -289,17 +299,18 @@ rec_neopos_peek = get_neopos_count(rider_kg, style_key, is_rec)
 st.divider()
 c1, c2 = st.columns(2)
 
+# [UPDATED] UI Text to match new constants
 st.info("""
 **Damping Reference:** Settings are clicks from **FULLY CLOSED** (Clockwise ↻).  
 
 **Formula Mod (Shock):**
 * **Compression:** 17 Click Adjustment
-* **Rebound:** 13 Click Adjustment
+* **Rebound:** 17 Click Adjustment
 
 **Formula Selva V (Fork):**
 * **Compression:** 12 Click Adjustment (Global gain: Fine-tunes **HSC & LSC** together).
 * **CTS Valve:** Defines the damping **behavior** (Curve Profile).
-* **Rebound:** 21 Click Adjustment
+* **Rebound:** 19 Click Adjustment
 
 **0** = Max Damping (Stiff).  
 **Higher #** = Min Damping (Soft).
