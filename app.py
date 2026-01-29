@@ -331,9 +331,10 @@ with col_reset:
 st.subheader("1. Configuration")
 col_w1, col_w2, col_w3 = st.columns(3)
 with col_w1:
-    rider_kg = st.number_input("Rider Weight (kg)", 40.0, 140.0, key="rider_kg", help="Fully kitted weight.")
+    with col_w1:
+    rider_kg = st.number_input("Rider Weight (kg)", 40.0, 140.0, step=0.5, key="rider_kg", help="Fully kitted weight.")
 with col_w2:
-    bike_kg = st.number_input("Bike Weight (kg)", 10.0, 30.0, key="bike_kg")
+    bike_kg = st.number_input("Bike Weight (kg)", 10.0, 30.0, step=0.1, key="bike_kg")
 with col_w3:
     unsprung_kg = st.number_input("Unsprung Mass (kg)", 2.0, 10.0, key="unsprung_kg")
 
