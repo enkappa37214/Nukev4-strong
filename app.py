@@ -205,7 +205,7 @@ with col_reset:
 st.subheader("1. Configuration")
 col_w1, col_w2, col_w3 = st.columns(3)
 with col_w1:
-    rider_kg = st.number_input("Rider Weight (kg)", 40.0, 140.0, 75.0, 0.1, help="Fully kitted weight.")
+    rider_kg = st.number_input("Rider Weight (kg)", 40.0, 140.0, 72.0, 0.1, help="Fully kitted weight.")
 with col_w2:
     bike_kg = st.number_input("Bike Weight (kg)", 10.0, 30.0, 15.1, 0.1)
 with col_w3:
