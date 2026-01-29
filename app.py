@@ -295,6 +295,12 @@ rec_neopos_peek = get_neopos_count(rider_kg, style_key, is_rec)
 st.divider()
 c1, c2 = st.columns(2)
 
+st.info("""
+**Damping Reference:** All settings are measured from **FULLY CLOSED** (Turn Clockwise ↻ until stop).  
+**0 Clicks** = Max Damping (Stiffest / Slowest).  
+**Higher Number** = Less Damping (Softer / Faster).
+""")
+
 # --- LEFT COLUMN (SHOCK) ---
 with c1:
     st.subheader("Formula MOD (Coil)")
@@ -360,7 +366,7 @@ with c2:
     
     d3, d4 = st.columns(2)
     d3.metric("Rebound", f"{res['fork_reb']}", "Clicks from CLOSED")
-    d4.metric("Compression", f"{res['fork_lsc']}", "Clicks from OPEN")
+    d4.metric("Compression", f"{res['fork_lsc']}", "Clicks from CLOSED")
     
     if is_rec:
         st.warning("⚠️ Recovery Safety: High Neopos applied.")
