@@ -142,12 +142,12 @@ CONFIG = {
 }
 
 SAG_DEFAULTS = {
-    "Flow / Jumps": 30,
-    "Dynamic": 31,
-    "Alpine": 32,
-    "Trail": 33,
-    "Steep / Tech": 34,
-    "Plush": 35,
+    "30% sag (Flow/Jumps)": 30,
+    "31% sag (Dynamic)": 31,
+    "32% sag (Alpine)": 32,
+    "33% sag (Trail)": 33,
+    "34% sag (Steep/Tech)": 34,
+    "35% sag (Plush)": 35,
 }
 
 # ==========================================================
