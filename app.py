@@ -1,313 +1,324 @@
 import streamlit as st
-import math
+import pandas as pd
+import datetime
+import numpy as np
+from fpdf import FPDF
+from streamlit_gsheets import GSheetsConnection
+import locale
+
+# Set locale for consistent number formatting
+try:
+    locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
+except locale.Error:
+    locale.setlocale(locale.LC_ALL, 'C')
 
 # ==========================================================
-# STREAMLIT CONFIG (Must be first)
+# 1. CONFIGURATION & DATA CONSTANTS
 # ==========================================================
-st.set_page_config(page_title="Nukeproof Mega v4 Calculator", page_icon="⚙️", layout="centered")
+st.set_page_config(page_title="Nukeproof Mega v4 - Formula Expert", page_icon="⚡", layout="centered")
 
-# ==========================================================
-# COLORS / CSS (THEME OVERRIDE)
-# ==========================================================
+# CSS / Styling
 COLORS = {
-    "petrol_blue": "#005F60",
-    "matte_black": "#0E1117",  # Deepest grey/black
-    "panel_grey": "#262730",   # Widget background
-    "brushed_silver": "#FAFAFA", # High contrast text
-    "gold_bronze": "#D4AF37",
-    "slate_grey": "#4A4D4F"
+    "petrol": "#005F60",
+    "bg": "#0E1117",
+    "card": "#262730",
+    "text": "#FAFAFA",
+    "accent": "#D4AF37",  # Formula Gold
+    "alert": "#FF4B4B"
 }
 
 st.markdown(f"""
 <style>
-    /* 1. FORCE DARK APP BACKGROUND */
-    .stApp {{
-        background-color: {COLORS['matte_black']};
-        color: {COLORS['brushed_silver']};
-    }}
-    
-    /* 2. TEXT & HEADERS */
-    h1, h2, h3, h4, h5, h6 {{ color: {COLORS['petrol_blue']} !important; }}
-    p, label, span, div {{ color: {COLORS['brushed_silver']}; }}
-    
-    /* 3. METRICS */
-    div[data-testid="stMetricValue"] {{
-        color: {COLORS['gold_bronze']} !important;
-        font-weight: 700;
-    }}
-    div[data-testid="stMetricDelta"] {{
-        color: {COLORS['brushed_silver']} !important;
-        font-size: 0.9em;
-    }}
-    div[data-testid="stMetricLabel"] {{
-        color: #A0A0A0 !important; 
-    }}
-
-    /* 4. INPUT WIDGETS */
-    .stSelectbox div[data-baseweb="select"] > div, 
-    .stNumberInput input, 
-    .stTextInput input {{
-        background-color: {COLORS['panel_grey']} !important;
-        color: {COLORS['brushed_silver']} !important;
-        border: 1px solid {COLORS['slate_grey']};
-    }}
-
-    /* 5. DROPDOWN MENUS */
-    ul[data-baseweb="menu"] {{
-        background-color: {COLORS['panel_grey']} !important;
-    }}
-    li[role="option"] {{
-        color: {COLORS['brushed_silver']} !important;
-        background-color: {COLORS['panel_grey']} !important;
-    }}
-    li[role="option"] div, li[role="option"] span {{
-        color: {COLORS['brushed_silver']} !important;
-    }}
-    li[role="option"]:hover, li[role="option"][aria-selected="true"] {{
-        background-color: {COLORS['slate_grey']} !important;
-    }}
-
-    /* 6. HAMBURGER MENU & SETTINGS */
-    ul[data-testid="main-menu-list"] {{
-        background-color: {COLORS['panel_grey']} !important;
-    }}
-    ul[data-testid="main-menu-list"] span,
-    ul[data-testid="main-menu-list"] div,
-    ul[data-testid="main-menu-list"] p {{
-        color: {COLORS['brushed_silver']} !important;
-    }}
-
-    /* 7. MODALS (Settings Window) */
-    div[role="dialog"] {{
-        background-color: {COLORS['panel_grey']} !important;
-        color: {COLORS['brushed_silver']} !important;
-    }}
-    div[role="dialog"] h2, div[role="dialog"] label {{
-        color: {COLORS['brushed_silver']} !important;
-    }}
-    
-    /* 8. SLIDERS & BUTTONS */
-    .stSlider [data-baseweb="slider"] {{
-        color: {COLORS['petrol_blue']};
-    }}
-    .stButton>button {{
-        background-color: {COLORS['petrol_blue']};
-        color: white !important;
-        border: none;
-    }}
-
-    /* 9. EXPANDERS */
-    .streamlit-expanderHeader {{
-        background-color: {COLORS['panel_grey']};
-        color: {COLORS['brushed_silver']} !important;
-        font-weight: 600;
-        border: 1px solid {COLORS['slate_grey']};
-    }}
-    
-    /* 10. HEADER BAR */
-    header[data-testid="stHeader"] {{
-        background-color: {COLORS['matte_black']} !important;
-    }}
-
-    /* 11. FIX HEADER OVERLAP (MOBILE & DESKTOP) */
-    .stApp {{
-        padding-top: 4.5rem;
-    }}
+    .stApp {{ background-color: {COLORS['bg']}; color: {COLORS['text']}; }}
+    h1, h2, h3 {{ color: {COLORS['petrol']} !important; }}
+    div[data-testid="stMetricValue"] {{ color: {COLORS['accent']} !important; font-weight: 700; }}
+    .stSelectbox div[data-baseweb="select"] > div {{ background-color: {COLORS['card']}; }}
+    div[role="dialog"] {{ background-color: {COLORS['card']}; }}
+    .stSlider [data-baseweb="slider"] {{ color: {COLORS['petrol']}; }}
+    .stButton>button {{ border: 1px solid {COLORS['accent']}; }}
 </style>
 """, unsafe_allow_html=True)
 
-# ==========================================================
-# SYSTEM CONFIGURATION
-# ==========================================================
+def reset_form_callback():
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+
+# --- ENGINEERING CONSTANTS (CORRECTED 2026 SPEC) ---
 CONFIG = {
-    "BIKE_MASS_KG": 15.11,
-    "UNSPRUNG_MASS_KG": 4.27,
     "SHOCK_STROKE_MM": 62.5,
-    "REAR_BIAS": 0.65,
     "LEV_RATIO_START": 2.90,
     "LEV_RATIO_COEFF": 0.00816,
-    "SPRING_MIN": 390,
-    "SPRING_MAX": 430,
-    "REBOUND_LBS_PER_CLICK": 35,
-    "BASE_FORK_PSI": 63.0,
-    "FORK_PSI_PER_KG": 0.85,
-    "SAG_PITCH_GAIN": 0.5,        # CHANGED: Reduced from 0.75 to 0.5 to prevent chasing loop
-    "NEG_SPRING_THRESHOLD": 70,
-    "NEG_SPRING_GAIN": 0.6,
-    "BRAKE_SUPPORT_GAIN": 1.0,
-    "BRAKE_SUPPORT_MAX": 3,
-    "BASE_FRONT_PSI": 23.0,
-    "BASE_REAR_PSI": 26.0,
-    "PSI_PER_KG": 0.25
+    
+    # Formula Mod (Coil)
+    # [CORRECTION] Reduced from 1.12 to 1.05 to prevent over-springing on high leverage frame
+    "MOD_FRICTION_CORRECTION": 1.05, 
+    "REBOUND_CLICKS_SHOCK": 13,
+    
+    # Formula Selva V (Air)
+    "FORK_PSI_BASE_OFFSET": 65.0,
+    "FORK_PSI_PER_KG": 0.88,
+    # [CORRECTION] Reduced from 3.5 to 2.0 to prevent negative spring suck-down
+    "NEOPOS_PSI_DROP": 2.0,
+    "ALTITUDE_PSI_DROP": 1.5,
+    "REBOUND_CLICKS_FORK": 21,
 }
 
-SAG_DEFAULTS = {
-    "30% sag (Flow/Jumps)": 30,
-    "31% sag (Dynamic)": 31,
-    "32% sag (Alpine)": 32,
-    "33% sag (Trail)": 33,
-    "34% sag (Steep/Tech)": 34,
-    "35% sag (Plush)": 35,
+STYLES = {
+    "Alpine Epic":       {"sag": 30.0, "bias": 65, "lsc_offset": 2, "desc": "Efficiency focus. Neutral bias."},
+    "Flow / Park":       {"sag": 28.0, "bias": 63, "lsc_offset": 4, "desc": "Max Support. Forward bias."}, # Tighter sag for park
+    "Dynamic":           {"sag": 31.0, "bias": 65, "lsc_offset": 0, "desc": "Balanced Enduro bias."},
+    "Trail":             {"sag": 32.0, "bias": 65, "lsc_offset": 0, "desc": "Chatter focus."},
+    "Steep / Tech":      {"sag": 33.0, "bias": 68, "lsc_offset": 1, "desc": "Geometry focus. Rearward bias."},
+    "Plush":             {"sag": 35.0, "bias": 65, "lsc_offset": -2, "desc": "Comfort max."}
 }
 
 # ==========================================================
-# LOGIC FUNCTIONS
+# 2. HELPER FUNCTIONS (LOGIC)
 # ==========================================================
-def recommend_neopos(weight, style):
-    base = 0
-    if style in ["Alpine", "Steep / Tech"]: base += 2
-    if style == "Plush": base -= 1
-    if weight > 75: base += 1
-    if weight < 70: base -= 1
+
+def get_cts_valve(style, weight, is_recovery):
+    if is_recovery: return "Purple" # High flow safer for recovery
     
-    val = max(0, min(4, base))
+    # [LOGIC UPDATE] 2026 CTS Mapping
+    if style == "Flow / Park": return "Blue" # Progressive/Poppy
+    if style == "Trail": return "Gold" # Standard
     
-    # CHANGED: Cap at 3 for all modes except 'Flow / Jumps'
-    if style != "Flow / Jumps" and val > 3:
-        val = 3
+    # Heavy Rider Logic for Steep/Tech
+    if style == "Steep / Tech": 
+        return "Orange" if weight > 85 else "Gold" # Orange provides anti-dive for heavy riders
+
+    if style == "Alpine Epic":
+        return "Purple" if weight < 75 else "Gold"
+
+    if style == "Plush":
+        return "Purple" # High Flow / Soft
         
-    return val
+    return "Gold"
 
-def get_fork_baseline(style, is_rec):
-    if is_rec or style == "Plush":
-        return "Bronze", 12, 12, -1 
-    if style in ["Flow / Jumps", "Dynamic"]:
-        return "Gold", 10, 11, 0
-    if style in ["Alpine", "Steep / Tech"]:
-        # CHANGED: Brake bias set to 0 (was 2) to avoid stacking with Purple valve
-        return "Purple", 8, 10, 0 
-    return "Bronze", 11, 11, 0
+def get_neopos_count(weight, style, is_recovery):
+    if is_recovery: return 3
+    
+    val = 1
+    if style in ["Flow / Park", "Steep / Tech"]: val += 1
+    if style == "Plush": val = 0
+    if weight > 85: val += 1
+    if weight < 65: val = 0
+    return max(0, min(3, val))
 
-def calculate_physics(weight, style, weather, is_rec, neopos_val):
-    # Kinematics
-    target_sag = 35 if is_rec else SAG_DEFAULTS.get(style, 33)
-    sag_dec = target_sag / 100.0
-    sag_mm = CONFIG["SHOCK_STROKE_MM"] * sag_dec
+def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_manual, altitude, weather, is_recovery):
+    s_data = STYLES[style_key]
     
-    sys_mass = weight + CONFIG["BIKE_MASS_KG"]
-    sprung_lbs = ((sys_mass * CONFIG["REAR_BIAS"]) - CONFIG["UNSPRUNG_MASS_KG"]) * 2.2046
+    # 1. BIAS APPLICATION
+    effective_bias_pct = bias_manual 
     
-    # Integral Leverage Ratio
-    lr_mean = CONFIG["LEV_RATIO_START"] - (CONFIG["LEV_RATIO_COEFF"] / 2.0) * sag_mm
+    # 2. MASS CALCULATIONS
+    total_mass_kg = rider_kg + bike_kg
+    sprung_mass_kg = total_mass_kg - unsprung_kg
     
-    # Raw Spring Rate
-    raw_rate = (sprung_lbs * lr_mean) / (sag_mm / 25.4)
+    # Rear Load (Sprung only * Bias)
+    rear_load_kg = sprung_mass_kg * (effective_bias_pct / 100.0)
+    rear_load_lbs = rear_load_kg * 2.20462
     
-    if raw_rate < CONFIG["SPRING_MIN"]: spring_rate = CONFIG["SPRING_MIN"]
-    elif raw_rate > CONFIG["SPRING_MAX"]: spring_rate = CONFIG["SPRING_MAX"]
-    else: spring_rate = 5 * round(raw_rate / 5)
+    # 3. KINEMATICS & SPRING (MOD)
+    final_sag_pct = 35.0 if is_recovery else sag_target
+    sag_mm = CONFIG["SHOCK_STROKE_MM"] * (final_sag_pct / 100.0)
     
-    # Actual Sag & Error
-    actual_sag_mm = ((sprung_lbs * lr_mean) / spring_rate) * 25.4
-    actual_sag_pct = (actual_sag_mm / CONFIG["SHOCK_STROKE_MM"]) * 100
-    sag_error = actual_sag_pct - target_sag
-
-    # Shock Damping
-    shock_reb = -10 + round((spring_rate - 400) / CONFIG["REBOUND_LBS_PER_CLICK"])
-    comp_offset = 0
-    if style in ["Alpine", "Steep / Tech"]: comp_offset = 2
-    elif style == "Plush": comp_offset = -2
-    shock_comp = -9 + comp_offset
-    if weather == "Cold": shock_reb -= 1; shock_comp -= 1
-    if weather == "Rain / Wet": shock_comp -= 2
-    shock_reb = max(-13, min(0, shock_reb))
-    shock_comp = max(-17, min(0, shock_comp))
-
-    # Fork PSI
-    fork_psi = CONFIG["BASE_FORK_PSI"]
-    fork_psi += (weight - 72) * CONFIG["FORK_PSI_PER_KG"]
-    fork_psi += sag_error * CONFIG["SAG_PITCH_GAIN"]
-    if weight < CONFIG["NEG_SPRING_THRESHOLD"]:
-        fork_psi -= (CONFIG["NEG_SPRING_THRESHOLD"] - weight) * CONFIG["NEG_SPRING_GAIN"]
-
+    lr_at_sag = CONFIG["LEV_RATIO_START"] - (CONFIG["LEV_RATIO_COEFF"] * sag_mm)
+    
+    # Force & Rate
+    spring_force_lbs = rear_load_lbs * lr_at_sag
+    shock_compress_in = sag_mm / 25.4
+    raw_rate = spring_force_lbs / shock_compress_in
+    
+    # [!] MOD CORRECTION (1.05x)
+    mod_rate = raw_rate * CONFIG["MOD_FRICTION_CORRECTION"]
+    
+    sprindex_rate = int(mod_rate)
+    std_rate = 25 * round(mod_rate / 25)
+    
+    # 4. SHOCK DAMPING
+    # Rebound (1-13 Limit)
+    # Pivot: 450lbs = 7 Clicks. 1 click per 50lbs.
+    reb_clicks = 7 - int((sprindex_rate - 450) / 50)
+    if weather == "Cold": reb_clicks += 2
+    reb_clicks = max(1, min(13, reb_clicks))
+    
+    # LSC
+    base_lsc = 7 + s_data["lsc_offset"]
+    if final_sag_pct > 32.0 and not is_recovery: base_lsc += 2
+    if weather == "Rain / Wet": base_lsc -= 2
+    if is_recovery: base_lsc = 1
+    lsc_clicks = max(1, min(13, base_lsc))
+    
+    # 5. FORK (SELVA V)
+    # Base Pressure
+    base_psi = CONFIG["FORK_PSI_BASE_OFFSET"] + ((rider_kg - 75) * CONFIG["FORK_PSI_PER_KG"])
+    
+    # Neopos & Altitude
+    neopos = get_neopos_count(rider_kg, style_key, is_recovery)
+    alt_penalty = (altitude / 1000.0) * CONFIG["ALTITUDE_PSI_DROP"]
+    
+    final_psi = base_psi - (neopos * CONFIG["NEOPOS_PSI_DROP"]) - alt_penalty
+    if is_recovery: final_psi = max(40, final_psi * 0.9)
+    
+    # Valve
+    valve = "Bronze" if is_recovery else get_cts_valve(style_key, rider_kg, is_recovery)
+    
     # Fork Damping
-    f_valve, base_lsc, base_lsr, brake_bias = get_fork_baseline(style, is_rec)
-    brake_clicks = min(CONFIG["BRAKE_SUPPORT_MAX"], brake_bias * CONFIG["BRAKE_SUPPORT_GAIN"])
+    fork_reb = 10 + int((final_psi - 70) / 10)
+    if weather == "Cold": fork_reb += 2
+    fork_reb = max(2, min(21, fork_reb))
     
-    f_lsc = base_lsc - brake_clicks 
+    fork_lsc = 12 # Start Open
+    if valve == "Gold": fork_lsc = 7
+    if valve == "Orange": fork_lsc = 5  # Strong support valve needs less dial
+    if valve == "Blue": fork_lsc = 4
+    if valve == "Purple": fork_lsc = 10 # Light valve needs dial support
+    if weather == "Rain / Wet": fork_lsc = 12
     
-    reb_correction = round((fork_psi - 66) / 5)
-    f_lsr = base_lsr - reb_correction
-    if weather == "Cold": f_lsc += 1; f_lsr += 1
-    f_lsc = max(2, min(12, int(f_lsc)))
-    f_lsr = max(2, min(19, int(f_lsr)))
-
-    # Tyres
-    t_mod = (weight - 72) * CONFIG["PSI_PER_KG"]
-    f_psi_tyre = CONFIG["BASE_FRONT_PSI"] + t_mod
-    r_psi_tyre = CONFIG["BASE_REAR_PSI"] + t_mod
-    if weather == "Rain / Wet":
-        f_psi_tyre -= 1.5; r_psi_tyre -= 1.5
-
     return {
-        "sys_mass": sys_mass, "lr_mean": lr_mean, "target_sag": target_sag,
-        "spring_rate": spring_rate, "raw_rate": raw_rate, "actual_sag": actual_sag_pct,
-        "sag_error": sag_error, "shock_lsc": abs(shock_comp), "shock_lsr": abs(shock_reb),
-        "fork_psi": fork_psi, "fork_valve": f_valve, "fork_lsc": abs(f_lsc), "fork_lsr": abs(f_lsr),
-        "brake_clicks": brake_clicks, "neopos_val": neopos_val,
-        "f_tyre": f_psi_tyre, "r_tyre": r_psi_tyre
+        "mod_rate": sprindex_rate,
+        "std_rate": std_rate,
+        "shock_reb": reb_clicks,
+        "shock_lsc": lsc_clicks,
+        "fork_psi": final_psi,
+        "fork_cts": valve,
+        "fork_neopos": neopos,
+        "fork_reb": fork_reb,
+        "fork_lsc": fork_lsc,
+        "sag": final_sag_pct,
+        "bias": effective_bias_pct
     }
 
 # ==========================================================
-# UI
+# 3. UI MAIN
 # ==========================================================
-st.title("Nukeproof Mega v4 Calculator")
-st.markdown("### Engineering Logic v12.8")
+col_title, col_reset = st.columns([0.8, 0.2])
+with col_title:
+    st.title("Nukeproof Mega v4 Setup")
+    st.caption("Formula Suspension Expert (2026 Spec)")
+with col_reset:
+    if st.button("Reset", on_click=reset_form_callback, type="secondary"):
+        st.rerun()
 
-# Inputs
-col1, col2 = st.columns(2)
-with col1:
-    weight = st.number_input("Rider Weight (kg)", min_value=50.0, max_value=110.0, value=72.0, step=0.5)
-    is_rec = st.toggle("Recovery Mode", value=False)
-with col2:
-    style = st.selectbox("Riding Style", options=list(SAG_DEFAULTS.keys()), index=3)
-    weather = st.selectbox("Weather", options=["Standard", "Cold", "Rain / Wet"])
+# --- INPUT SECTION ---
+st.subheader("1. Configuration")
+col_w1, col_w2, col_w3 = st.columns(3)
+with col_w1:
+    rider_kg = st.number_input("Rider Weight (kg)", 40.0, 140.0, 75.0, 0.1, help="Fully kitted weight.")
+with col_w2:
+    bike_kg = st.number_input("Bike Weight (kg)", 10.0, 30.0, 15.1, 0.1)
+with col_w3:
+    unsprung_kg = st.number_input("Unsprung Mass (kg)", 2.0, 10.0, 4.27, 0.01)
 
-# Neopos slider
-st.markdown("### Neopos Tokens")
-neopos_auto = recommend_neopos(weight, style)
-neopos_val = st.select_slider(
-    "Auto Recommended: {} | Override 0–4".format(neopos_auto),
-    options=["Auto", 0, 1, 2, 3, 4],
-    value="Auto"
-)
-neopos_val_final = neopos_auto if neopos_val == "Auto" else int(neopos_val)
+col_rec, col_env1, col_env2 = st.columns(3)
+with col_rec:
+    st.write("") 
+    st.write("") 
+    is_rec = st.toggle("Recovery Mode", help="Max softness + Anti-Dive safety.")
+with col_env1:
+    weather = st.selectbox("Weather", ["Standard", "Cold (<5°C)", "Rain / Wet"])
+with col_env2:
+    altitude = st.number_input("Max Altitude (m)", 0, 3000, 500, 50)
 
-# Calculate
-data = calculate_physics(weight, style, weather, is_rec, neopos_val_final)
+st.markdown("---")
+
+st.subheader("2. Tuning")
+col_style, col_sag, col_bias = st.columns(3)
+
+def update_defaults():
+    s_key = st.session_state.style_select
+    st.session_state.sag_slider = STYLES[s_key]["sag"]
+    st.session_state.bias_slider = STYLES[s_key]["bias"]
+
+with col_style:
+    style_key = st.selectbox("Riding Style", list(STYLES.keys()), key="style_select", on_change=update_defaults)
+
+with col_sag:
+    if "sag_slider" not in st.session_state: st.session_state.sag_slider = 31.0
+    target_sag = st.slider("Target Sag (%)", 25.0, 35.0, key="sag_slider", step=0.5, help="Nukeproof Kinematic Limit")
+
+with col_bias:
+    if "bias_slider" not in st.session_state: st.session_state.bias_slider = 65
+    target_bias = st.slider("Rear Bias (%)", 55, 80, key="bias_slider", help="Applied to Sprung Mass")
+
+# ==========================================================
+# 4. CALCULATIONS & OUTPUT
+# ==========================================================
+res = calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, target_sag, target_bias, altitude, weather, is_rec)
 
 st.divider()
 
-# Rear Section
-with st.expander("Rear Suspension (Formula Mod)", expanded=True):
-    col_a, col_b = st.columns(2)
-    col_a.metric("Spring Rate", f"{data['spring_rate']} lb", delta=f"Raw: {data['raw_rate']:.1f} lb")
-    col_b.metric("Target Sag", f"{data['target_sag']}%", f"Act: {data['actual_sag']:.1f}%")
-    st.caption(f"Sag Error: {data['sag_error']:+.1f}% | Pitch correction active")
-    st.markdown("---")
-    col_c, col_d = st.columns(2)
-    col_c.metric("Shock LSC", f"{data['shock_lsc']} OUT")
-    col_d.metric("Shock LSR", f"{data['shock_lsr']} OUT")
+c1, c2 = st.columns(2)
 
-# Fork Section
-with st.expander("Fork (Selva V)", expanded=True):
-    # Row 1: Air Spring & Hardware (PSI, Valve, Neopos)
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Air Pressure", f"{data['fork_psi']:.1f} PSI", delta="±1.0 PSI")
-    c2.metric("CTS Valve", data['fork_valve'])
-    c3.metric("Neopos", f"{data['neopos_val']}") 
+# SHOCK
+with c1:
+    st.subheader("Formula MOD (Coil)")
+    st.metric("Sprindex Rate", f"{res['mod_rate']} lbs", delta="Exact Rate")
+    st.caption(f"Standard Coil: {res['std_rate']} lbs")
     
-    st.markdown("---")
-    
-    # Row 2: Damping (Knobs)
+    if is_rec and "Sprindex" not in st.session_state.get('spring_type_sel', ''): 
+        st.warning("⚠️ Recovery Mode: Progressive coil recommended.")
+        
     d1, d2 = st.columns(2)
-    d1.metric("Fork LSC", f"{data['fork_lsc']} OUT", help=f"12 Clicks Max. Bias: {data['brake_clicks']}")
-    d2.metric("Fork LSR", f"{data['fork_lsr']} OUT", help="19 Clicks Max")
+    d1.metric("Rebound", f"{res['shock_reb']}", "Clicks from CLOSED")
+    d2.metric("Compression", f"{res['shock_lsc']}", "Clicks from CLOSED")
+    
+    st.info(f"**Engineering:** Spring corrected (+5%) for frictionless bladder. LSC tuned for {res['sag']}% sag.")
 
-# Tyres
-with st.expander("Tyres (SuperGravity)", expanded=True):
-    col_a, col_b = st.columns(2)
-    col_a.metric("Front", f"{data['f_tyre']:.1f} PSI")
-    col_b.metric("Rear", f"{data['r_tyre']:.1f} PSI")
+# FORK
+with c2:
+    st.subheader("Formula Selva V (Air)")
+    st.metric("Pressure", f"{res['fork_psi']:.1f} psi", delta=f"Neopos: {res['fork_neopos']}")
+    
+    h1, h2 = st.columns(2)
+    h1.metric("CTS Valve", res['fork_cts'])
+    h2.metric("Neopos", res['fork_neopos'])
+    
+    d3, d4 = st.columns(2)
+    d3.metric("Rebound", f"{res['fork_reb']}", "Clicks from CLOSED")
+    d4.metric("Compression", f"{res['fork_lsc']}", "Clicks from OPEN")
+    
+    if is_rec:
+        st.warning("⚠️ Recovery Safety: High Neopos applied.")
+    
+    # Expert Signal for Heavy Riders on Steep Terrain
+    if rider_kg > 85 and style_key == "Steep / Tech" and res['fork_cts'] == "Orange":
+        st.info("ℹ️ **Expert Note:** Orange valve selected for max anti-dive support at this weight class.")
 
-st.caption(f"System Mass: {data['sys_mass']:.1f} kg | Mean Leverage: {data['lr_mean']:.3f}")
+st.markdown("---")
+
+# PDF Generation
+def generate_pdf(data):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(200, 10, "Nukeproof Mega v4 Setup Report", ln=True, align='C')
+    pdf.set_font("Arial", size=11); pdf.ln(10)
+    
+    pdf.cell(200, 8, f"Rider: {rider_kg}kg | Bike: {bike_kg}kg | Unsprung: {unsprung_kg}kg", ln=True)
+    pdf.cell(200, 8, f"Style: {style_key} | Weather: {weather}", ln=True)
+    pdf.ln(5)
+    pdf.set_font("Arial", 'B', 12); pdf.cell(200, 10, "Formula MOD", ln=True)
+    pdf.set_font("Arial", size=10)
+    pdf.cell(200, 8, f"Sprindex Rate: {data['mod_rate']} lbs", ln=True)
+    pdf.cell(200, 8, f"Rebound: {data['shock_reb']} clicks", ln=True)
+    pdf.cell(200, 8, f"Compression: {data['shock_lsc']} clicks", ln=True)
+    
+    pdf.ln(5)
+    pdf.set_font("Arial", 'B', 12); pdf.cell(200, 10, "Formula Selva V", ln=True)
+    pdf.set_font("Arial", size=10)
+    pdf.cell(200, 8, f"Pressure: {data['fork_psi']:.1f} psi", ln=True)
+    pdf.cell(200, 8, f"Neopos: {data['fork_neopos']}", ln=True)
+    pdf.cell(200, 8, f"CTS: {data['fork_cts']}", ln=True)
+    
+    return pdf.output(dest="S").encode("latin-1")
+
+if st.button("Export PDF Report"):
+    try:
+        pdf_bytes = generate_pdf(res)
+        st.download_button("Download PDF", pdf_bytes, "setup_report.pdf", "application/pdf")
+    except Exception as e:
+        st.error(f"PDF Error: {e}")
+
+st.caption("Calculations valid for Nukeproof Mega v4 (2020-2026) + Formula Selva V 2025 + Formula Mod 2025")
