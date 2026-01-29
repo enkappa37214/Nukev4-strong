@@ -431,6 +431,8 @@ with c1:
     if abs(res['sag_actual'] - res['sag']) > 2.0:
         st.caption(f"⚠️ **Geometry Shift:** Estimated Sag {res['sag_actual']:.1f}%")
 
+    st.metric("CTS Valve", res['shock_cts'])
+
     d1, d2 = st.columns(2)
     d1.metric("Rebound", f"{res['shock_reb']}", "Clicks from CLOSED")
     d2.metric("Compression", f"{res['shock_lsc']}", "Clicks from CLOSED")
