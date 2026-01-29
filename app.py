@@ -205,7 +205,7 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     # If Linear (Missing tokens) -> Need LOWER number (More Damping)
     lsc_fork_comp = 0
     if neopos_delta < 0: lsc_fork_comp = -abs(neopos_delta) # Subtract clicks (Stiffen)
-    if neopos_delta > 0: lsc_fork_comp = neopos_delta       # Add clicks (Soften)
+    if neopos_delta > 0: lsc_fork_comp = neopos_delta        # Add clicks (Soften)
     
     fork_lsc = 12 # Start Open
     if valve == "Gold": fork_lsc = 7
@@ -249,21 +249,21 @@ with col_reset:
 st.subheader("1. Configuration")
 col_w1, col_w2, col_w3 = st.columns(3)
 with col_w1:
-    rider_kg = st.number_input("Rider Weight (kg)", 40.0, 140.0, 72.0, 0.1, help="Fully kitted weight.")
+    rider_kg = st.number_input("Rider Weight (kg)", 40.0, 140.0, 72.0, 0.1, help="Fully kitted weight.", key="rider_kg")
 with col_w2:
-    bike_kg = st.number_input("Bike Weight (kg)", 10.0, 30.0, 15.1, 0.1)
+    bike_kg = st.number_input("Bike Weight (kg)", 10.0, 30.0, 15.1, 0.1, key="bike_kg")
 with col_w3:
-    unsprung_kg = st.number_input("Unsprung Mass (kg)", 2.0, 10.0, 4.27, 0.01)
+    unsprung_kg = st.number_input("Unsprung Mass (kg)", 2.0, 10.0, 4.27, 0.01, key="unsprung_kg")
 
 col_rec, col_env1, col_env2 = st.columns(3)
 with col_rec:
     st.write("") 
     st.write("") 
-    is_rec = st.toggle("Recovery Mode", help="Max softness + Anti-Dive safety.")
+    is_rec = st.toggle("Recovery Mode", help="Max softness + Anti-Dive safety.", key="is_rec")
 with col_env1:
-    weather = st.selectbox("Weather", ["Standard", "Cold (<5°C)", "Rain / Wet"])
+    weather = st.selectbox("Weather", ["Standard", "Cold (<5°C)", "Rain / Wet"], key="weather")
 with col_env2:
-    altitude = st.number_input("Max Altitude (m)", 0, 3000, 500, 50)
+    altitude = st.number_input("Max Altitude (m)", 0, 3000, 500, 50, key="altitude")
 
 st.markdown("---")
 
@@ -313,7 +313,8 @@ with c1:
         "Actual Spring Rate (lbs)", 
         options=spring_options, 
         index=0,
-        help="Select your installed Sprindex/Coil rate to adapt damping."
+        help="Select your installed Sprindex/Coil rate to adapt damping.",
+        key="spring_override"
     )
 
 # --- RIGHT COLUMN (FORK) ---
@@ -325,7 +326,8 @@ with c2:
         "Neopos Config (Installed)", 
         options=["Auto", "0", "1", "2", "3"], 
         value="Auto",
-        help=f"Auto recommends: {rec_neopos_peek}."
+        help=f"Auto recommends: {rec_neopos_peek}.",
+        key="neopos_override"
     )
 
 # --- RUN CALCULATION ---
