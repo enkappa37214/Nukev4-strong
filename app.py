@@ -105,13 +105,27 @@ def get_neopos_count(weight, style, is_recovery):
     if weight < 65: val = 0
     return max(0, min(3, val))
 
-def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_manual, altitude, weather, is_recovery):
+def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_manual, altitude, weather, is_recovery, neopos_select):
     s_data = STYLES[style_key]
     
-    # 1. BIAS APPLICATION
+    # --- 1. NEOPOS LOGIC & COMPENSATION ---
+    # Calculate what should be there vs what is there
+    neopos_rec = get_neopos_count(rider_kg, style_key, is_recovery)
+    
+    if neopos_select == "Auto":
+        neopos_final = neopos_rec
+    else:
+        neopos_final = int(neopos_select)
+        
+    # Calculate Mismatch (Delta)
+    # Negative Delta (e.g., -2) = Missing tokens (Too Linear) -> Needs Stiffness
+    # Positive Delta (e.g., +1) = Extra tokens (Too Progressive) -> Needs Softness
+    neopos_delta = neopos_final - neopos_rec
+    
+    # 2. BIAS APPLICATION
     effective_bias_pct = bias_manual 
     
-    # 2. MASS CALCULATIONS
+    # 3. MASS CALCULATIONS
     total_mass_kg = rider_kg + bike_kg
     sprung_mass_kg = total_mass_kg - unsprung_kg
     
@@ -119,7 +133,7 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     rear_load_kg = sprung_mass_kg * (effective_bias_pct / 100.0)
     rear_load_lbs = rear_load_kg * 2.20462
     
-    # 3. KINEMATICS & SPRING (MOD)
+    # 4. KINEMATICS & SPRING (MOD)
     final_sag_pct = 35.0 if is_recovery else sag_target
     sag_mm = CONFIG["SHOCK_STROKE_MM"] * (final_sag_pct / 100.0)
     
@@ -133,32 +147,48 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     # [!] MOD CORRECTION (1.05x)
     mod_rate = raw_rate * CONFIG["MOD_FRICTION_CORRECTION"]
     
-    sprindex_rate = int(mod_rate)
-    std_rate = 25 * round(mod_rate / 25)
+    # [!] COMPENSATION: Spring Rate
+    # If front is Linear (Missing tokens), stiffen rear to balance dynamic ride height
+    rate_comp_lbs = 0
+    if neopos_delta < 0: rate_comp_lbs = abs(neopos_delta) * 10 # +10lbs per missing token
+    if neopos_delta > 0: rate_comp_lbs = -(neopos_delta * 5)   # -5lbs per extra token
     
-    # 4. SHOCK DAMPING
+    sprindex_rate = int(mod_rate + rate_comp_lbs)
+    std_rate = 25 * round((mod_rate + rate_comp_lbs) / 25)
+    
+    # 5. SHOCK DAMPING
     # Rebound (1-13 Limit)
-    # Pivot: 450lbs = 7 Clicks. 1 click per 50lbs.
     reb_clicks = 7 - int((sprindex_rate - 450) / 50)
     if weather == "Cold": reb_clicks += 2
     reb_clicks = max(1, min(13, reb_clicks))
     
     # LSC
-    base_lsc = 7 + s_data["lsc_offset"]
+    # [!] COMPENSATION: Shock LSC
+    # If front is diving (Linear), stiffen rear LSC to match system support
+    lsc_comp_clicks = 0
+    if neopos_delta < 0: lsc_comp_clicks = abs(neopos_delta) # +1 click per missing token
+    
+    base_lsc = 7 + s_data["lsc_offset"] + lsc_comp_clicks
     if final_sag_pct > 32.0 and not is_recovery: base_lsc += 2
     if weather == "Rain / Wet": base_lsc -= 2
     if is_recovery: base_lsc = 1
     lsc_clicks = max(1, min(13, base_lsc))
     
-    # 5. FORK (SELVA V)
+    # 6. FORK (SELVA V)
     # Base Pressure
     base_psi = CONFIG["FORK_PSI_BASE_OFFSET"] + ((rider_kg - 75) * CONFIG["FORK_PSI_PER_KG"])
     
     # Neopos & Altitude
-    neopos = get_neopos_count(rider_kg, style_key, is_recovery)
     alt_penalty = (altitude / 1000.0) * CONFIG["ALTITUDE_PSI_DROP"]
     
-    final_psi = base_psi - (neopos * CONFIG["NEOPOS_PSI_DROP"]) - alt_penalty
+    # [!] COMPENSATION: Fork Pressure
+    # If tokens missing, add pressure to prevent bottom out (Safety)
+    psi_safety = 0
+    if neopos_delta < 0: psi_safety = abs(neopos_delta) * 3.0 # +3psi per missing token
+    
+    # Standard formula uses the ACTUAL count inside the fork
+    final_psi = base_psi - (neopos_final * CONFIG["NEOPOS_PSI_DROP"]) - alt_penalty + psi_safety
+    
     if is_recovery: final_psi = max(40, final_psi * 0.9)
     
     # Valve
@@ -169,12 +199,23 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     if weather == "Cold": fork_reb += 2
     fork_reb = max(2, min(21, fork_reb))
     
+    # [!] COMPENSATION: Fork Compression
+    # Clicks are from OPEN (12 = Open, 0 = Closed)
+    # If Linear (Missing tokens) -> Need LOWER number (More Damping)
+    lsc_fork_comp = 0
+    if neopos_delta < 0: lsc_fork_comp = -abs(neopos_delta) # Subtract clicks (Stiffen)
+    if neopos_delta > 0: lsc_fork_comp = neopos_delta       # Add clicks (Soften)
+    
     fork_lsc = 12 # Start Open
     if valve == "Gold": fork_lsc = 7
-    if valve == "Orange": fork_lsc = 5  # Strong support valve needs less dial
+    if valve == "Orange": fork_lsc = 5
     if valve == "Blue": fork_lsc = 4
-    if valve == "Purple": fork_lsc = 10 # Light valve needs dial support
+    if valve == "Purple": fork_lsc = 10
+    
+    fork_lsc += lsc_fork_comp
+    
     if weather == "Rain / Wet": fork_lsc = 12
+    fork_lsc = max(0, min(12, fork_lsc)) # Clamp
     
     return {
         "mod_rate": sprindex_rate,
@@ -183,7 +224,8 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
         "shock_lsc": lsc_clicks,
         "fork_psi": final_psi,
         "fork_cts": valve,
-        "fork_neopos": neopos,
+        "fork_neopos": neopos_final, # Return what is physically installed
+        "neopos_rec": neopos_rec,    # Return what should be installed
         "fork_reb": fork_reb,
         "fork_lsc": fork_lsc,
         "sag": final_sag_pct,
@@ -245,15 +287,46 @@ with col_bias:
 # ==========================================================
 # 4. CALCULATIONS & OUTPUT
 # ==========================================================
-res = calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, target_sag, target_bias, altitude, weather, is_rec)
+
+# 1. UI: Calculate Recommended First to display "Auto" Logic
+# We need to peek at the recommendation before calling the full calculation
+rec_neopos_peek = get_neopos_count(rider_kg, style_key, is_rec)
+
+# 2. UI: Neopos Slider (Inserted in the main flow or Results? Request said "bellow CTS Valve/Neopos fields" in results)
+# However, to affect calculations, we need the input BEFORE running calculate_setup.
+# I will create a container for it here or simply put the slider logic here.
 
 st.divider()
 
 c1, c2 = st.columns(2)
 
-# SHOCK
+# FORK UI (Right Column - Setup Inputs for Neopos Override)
+with c2:
+    st.subheader("Formula Selva V (Air)")
+    
+    
+    # Neopos Logic Slider
+    # We put this INPUT inside the result column as requested, but we must run calc after.
+    # Note: Streamlit runs top-down. To make this clean, we usually put inputs up top. 
+    # But to follow instructions "bellow CTS Valve", we can render the input here, 
+    # but we need to run the calculation *after* this slider exists.
+    
+    # Let's display the headers first, then the slider, then the metrics.
+    
+    neopos_select = st.select_slider(
+        "Neopos Config (Installed)", 
+        options=["Auto", "0", "1", "2", "3"], 
+        value="Auto",
+        help=f"Auto recommends: {rec_neopos_peek}. Change this if your actual setup differs."
+    )
+
+# RUN CALCULATION NOW (With the slider value)
+res = calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, target_sag, target_bias, altitude, weather, is_rec, neopos_select)
+
+# SHOCK OUTPUT (Left Column)
 with c1:
     st.subheader("Formula MOD (Coil)")
+    
     st.metric("Sprindex Rate", f"{res['mod_rate']} lbs", delta="Exact Rate")
     st.caption(f"Standard Coil: {res['std_rate']} lbs")
     
@@ -266,14 +339,21 @@ with c1:
     
     st.info(f"**Engineering:** Spring corrected (+5%) for frictionless bladder. LSC tuned for {res['sag']}% sag.")
 
-# FORK
+# FORK OUTPUT (Right Column - continued)
 with c2:
-    st.subheader("Formula Selva V (Air)")
-    st.metric("Pressure", f"{res['fork_psi']:.1f} psi", delta=f"Neopos: {res['fork_neopos']}")
+    # We already rendered the Header and Slider above. Now rendering metrics.
+    
+    st.metric("Pressure", f"{res['fork_psi']:.1f} psi", delta=f"Active: {res['fork_neopos']} Neopos")
     
     h1, h2 = st.columns(2)
     h1.metric("CTS Valve", res['fork_cts'])
-    h2.metric("Neopos", res['fork_neopos'])
+    
+    # Visual feedback on Neopos mismatch
+    neo_label = f"{res['fork_neopos']}"
+    if res['fork_neopos'] != res['neopos_rec']:
+        neo_label += f" (Rec: {res['neopos_rec']})"
+        
+    h2.metric("Neopos Count", neo_label, delta_color="off")
     
     d3, d4 = st.columns(2)
     d3.metric("Rebound", f"{res['fork_reb']}", "Clicks from CLOSED")
@@ -282,11 +362,13 @@ with c2:
     if is_rec:
         st.warning("⚠️ Recovery Safety: High Neopos applied.")
     
-    # Expert Signal for Heavy Riders on Steep Terrain
+    # Expert Signal for Heavy Riders
     if rider_kg > 85 and style_key == "Steep / Tech" and res['fork_cts'] == "Orange":
         st.info("ℹ️ **Expert Note:** Orange valve selected for max anti-dive support at this weight class.")
-
-st.markdown("---")
+    
+    # Mismatch warning
+    if res['fork_neopos'] != res['neopos_rec']:
+        st.caption(f"⚠️ **Compensating:** Fork PSI, LSC & Shock Rate adjusted for volume mismatch.")
 
 # PDF Generation
 def generate_pdf(data):
