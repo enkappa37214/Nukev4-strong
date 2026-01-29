@@ -15,7 +15,6 @@ except locale.Error:
 st.set_page_config(page_title="Nukeproof Mega v4 - Formula Expert", page_icon="⚡", layout="centered")
 
 # --- DEFAULT VALUES REGISTRY ---
-# Explicit defaults required for the Reset button to function correctly
 DEFAULTS = {
     "rider_kg": 72.0,
     "bike_kg": 15.1,
@@ -27,12 +26,13 @@ DEFAULTS = {
     "sag_slider": 31.0,
     "bias_slider": 65,
     "spring_override": "Auto",
-    "neopos_override": "Auto"
+    "neopos_override": "Auto",
+    "valve_override": "Auto"
 }
 
 # --- CALLBACKS ---
 def reset_form_callback():
-    st.session_state.clear() # Wipe state to trigger re-initialization
+    st.session_state.clear() 
 
 def initialize_state():
     for key, value in DEFAULTS.items():
@@ -50,7 +50,7 @@ def update_style_logic():
             st.session_state.sag_slider = STYLES[s_key]["sag"]
             st.session_state.bias_slider = STYLES[s_key]["bias"]
 
-# Initialize State on every run
+# Initialize State
 initialize_state()
 
 # CSS / Styling
@@ -80,22 +80,35 @@ CONFIG = {
     "SHOCK_STROKE_MM": 62.5,
     "LEV_RATIO_START": 2.90,
     "LEV_RATIO_COEFF": 0.00816,
-    "MOD_FRICTION_CORRECTION": 1.05, # Validated: High volume bladder lacks IFP friction
-    "REBOUND_CLICKS_SHOCK": 17, # [UPDATED] from 13 to 17
+    "MOD_FRICTION_CORRECTION": 1.05, 
+    "REBOUND_CLICKS_SHOCK": 13,   # Verified
+    "COMP_CLICKS_SHOCK": 17,      # Verified
     "FORK_PSI_BASE_OFFSET": 65.0,
     "FORK_PSI_PER_KG": 0.88,
     "NEOPOS_PSI_DROP": 2.0,
     "ALTITUDE_PSI_DROP": 1.5,
-    "REBOUND_CLICKS_FORK": 19, # [UPDATED] from 21 to 19
+    "REBOUND_CLICKS_FORK": 19,    # Capped at 19
 }
 
+# CTS VALVE SPECIFICATIONS (Score 1-10: Support | Ramp)
+VALVE_SPECS = {
+    "Purple": {"support": 2, "ramp": 2}, 
+    "Blue":   {"support": 3, "ramp": 7}, 
+    "Gold":   {"support": 5, "ramp": 5}, 
+    "Orange": {"support": 7, "ramp": 6}, 
+    "Green":  {"support": 8, "ramp": 8}, 
+    "Bronze": {"support": 2, "ramp": 9}, 
+    "Red":    {"support": 6, "ramp": 7}, 
+}
+
+# [CORRECTION] Inverted LSC Offsets to match Formula Logic (Low # = Stiff, High # = Soft)
 STYLES = {
-    "Alpine Epic":       {"sag": 30.0, "bias": 65, "lsc_offset": 2, "desc": "Efficiency focus. Neutral bias."},
-    "Flow / Park":       {"sag": 30.0, "bias": 63, "lsc_offset": 4, "desc": "Max Support. Forward bias."},
+    "Alpine Epic":       {"sag": 30.0, "bias": 65, "lsc_offset": -1, "desc": "Efficiency focus. Neutral bias."},
+    "Flow / Park":       {"sag": 30.0, "bias": 63, "lsc_offset": -3, "desc": "Max Support. Forward bias."},
     "Dynamic":           {"sag": 31.0, "bias": 65, "lsc_offset": 0, "desc": "Balanced Enduro bias."},
     "Trail":             {"sag": 32.0, "bias": 65, "lsc_offset": 0, "desc": "Chatter focus."},
-    "Steep / Tech":      {"sag": 33.0, "bias": 68, "lsc_offset": 1, "desc": "Geometry focus. Rearward bias."},
-    "Plush":             {"sag": 35.0, "bias": 65, "lsc_offset": -2, "desc": "Comfort max."}
+    "Steep / Tech":      {"sag": 33.0, "bias": 68, "lsc_offset": -2, "desc": "Geometry focus. Rearward bias."},
+    "Plush":             {"sag": 35.0, "bias": 65, "lsc_offset": 4, "desc": "Comfort max."}
 }
 
 # ==========================================================
@@ -103,7 +116,8 @@ STYLES = {
 # ==========================================================
 
 def get_cts_valve(style, weight, is_recovery):
-    if is_recovery: return "Purple"
+    if is_recovery: return "Bronze" 
+    
     if style == "Flow / Park": return "Blue"
     if style == "Trail": return "Gold"
     if style == "Steep / Tech": 
@@ -115,7 +129,7 @@ def get_cts_valve(style, weight, is_recovery):
     return "Gold"
 
 def get_neopos_count(weight, style, is_recovery):
-    if is_recovery: return 3
+    if is_recovery: return 1
     val = 1
     if style in ["Flow / Park", "Steep / Tech"]: val += 1
     if style == "Plush": val = 0
@@ -123,17 +137,33 @@ def get_neopos_count(weight, style, is_recovery):
     if weight < 65: val = 0
     return max(0, min(3, val))
 
-def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_manual, altitude, weather, is_recovery, neopos_select, spring_override):
+def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_manual, altitude, weather, is_recovery, neopos_select, spring_override, valve_override):
     s_data = STYLES[style_key]
     
-    # 1. FORK CONFIG
+    # --- 1. CONFIGURATION ---
     neopos_rec = get_neopos_count(rider_kg, style_key, is_recovery)
-    if neopos_select == "Auto": neopos_final = neopos_rec
-    else: neopos_final = int(neopos_select)
-    neopos_delta = neopos_final - neopos_rec
+    valve_ideal = get_cts_valve(style_key, rider_kg, is_recovery)
+    
+    if valve_override == "Auto":
+        valve_active = valve_ideal
+        valve_mismatch = False
+    else:
+        valve_active = valve_override
+        valve_mismatch = (valve_active != valve_ideal)
 
-    # 2. SHOCK LOAD & RATE
-    # [FIX B] Decoupled Rear Spring from Fork Neopos (Phantom Coupling Removed)
+    if neopos_select == "Auto": 
+        neopos_installed = neopos_rec
+    else: 
+        neopos_installed = int(neopos_select)
+
+    # --- 2. VALVE DELTAS ---
+    ideal_scores = VALVE_SPECS.get(valve_ideal, VALVE_SPECS["Gold"])
+    active_scores = VALVE_SPECS.get(valve_active, VALVE_SPECS["Gold"])
+    
+    support_delta = active_scores["support"] - ideal_scores["support"] 
+    ramp_delta = active_scores["ramp"] - ideal_scores["ramp"]      
+
+    # --- 3. SHOCK CALCULATIONS ---
     effective_bias_pct = bias_manual 
     total_mass_kg = rider_kg + bike_kg
     sprung_mass_kg = total_mass_kg - unsprung_kg
@@ -142,15 +172,13 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     
     final_sag_pct = 35.0 if is_recovery else sag_target
     sag_mm = CONFIG["SHOCK_STROKE_MM"] * (final_sag_pct / 100.0)
-    
     lr_at_sag = CONFIG["LEV_RATIO_START"] - (CONFIG["LEV_RATIO_COEFF"] * sag_mm)
     
     spring_force_lbs = rear_load_lbs * lr_at_sag
     shock_compress_in = sag_mm / 25.4
     raw_rate = spring_force_lbs / shock_compress_in
     mod_rate = raw_rate * CONFIG["MOD_FRICTION_CORRECTION"]
-    
-    ideal_rate_exact = int(mod_rate) # Pure Kinematic Rate
+    ideal_rate_exact = int(mod_rate)
     
     if spring_override == "Auto":
         active_rate = ideal_rate_exact
@@ -161,70 +189,73 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
         
     sag_actual_pct = final_sag_pct * (ideal_rate_exact / active_rate)
 
-    # 3. SHOCK DAMPING
-    # Rebound: Heavier spring = Stiffer rebound (lower clicks)
+    # Shock Damping (Mod)
+    # Rebound (13 Clicks)
     reb_clicks = 7 - int((active_rate - 450) / 50)
-    
-    # [UPDATED] Aggressive Cold Mode (+5 clicks)
-    if weather == "Cold (<5°C)": reb_clicks += 5 
-    
+    if weather == "Cold (<5°C)": reb_clicks += 3 
     reb_clicks = max(1, min(CONFIG["REBOUND_CLICKS_SHOCK"], reb_clicks))
     
-    # [FIX A] Damping Compensation Logic
-    # Physics: Stiff Spring (>0 mismatch) requires LESS Damping (Softer).
-    # Formula: High Click # = Softer.
-    # Logic: +Mismatch -> +Clicks (Softer).
+    # Compression (17 Clicks)
+    # Stiff Spring (>0 mismatch) -> Add clicks (Soften)
     lsc_softening_clicks = int(rate_mismatch / 25) 
     
-    # Neopos Compensation (Rear LSC Only): 
-    # If front is diving (delta < 0), we Stiffen Rear LSC to balance chassis.
-    # This is a chassis balance adjustment, not a spring rate coupling.
+    neopos_delta = neopos_installed - neopos_rec
     lsc_chassis_bal = 0
     if neopos_delta < 0: lsc_chassis_bal = -abs(neopos_delta)
     
-    base_lsc = 7 + s_data["lsc_offset"] + lsc_softening_clicks + lsc_chassis_bal
+    # Base offset + corrections
+    base_lsc = 9 + s_data["lsc_offset"] + lsc_softening_clicks + lsc_chassis_bal
     
     if final_sag_pct > 32.0 and not is_recovery: base_lsc -= 1
     if weather == "Rain / Wet": base_lsc += 2
-    if is_recovery: base_lsc = 12
+    if is_recovery: base_lsc = 17 # Full Open
         
-    lsc_clicks = max(1, min(13, base_lsc)) # LSC is still 13 clicks max on Mod
-    
-    # 4. FORK PRESSURE & DAMPING
+    lsc_clicks = max(1, min(CONFIG["COMP_CLICKS_SHOCK"], base_lsc))
+
+    # --- 4. FORK CALCULATIONS (Selva V) ---
     base_psi = CONFIG["FORK_PSI_BASE_OFFSET"] + ((rider_kg - 75) * CONFIG["FORK_PSI_PER_KG"])
     alt_penalty = (altitude / 1000.0) * CONFIG["ALTITUDE_PSI_DROP"]
     
-    # Safety: If tokens missing, add pressure
-    psi_safety = 0
-    if neopos_delta < 0: psi_safety = abs(neopos_delta) * 3.0
+    # Neopos Ramp Compensation
+    neopos_correction = int(ramp_delta / 3) 
+    final_neopos_count = max(0, min(3, neopos_installed - neopos_correction))
     
-    final_psi = base_psi - (neopos_final * CONFIG["NEOPOS_PSI_DROP"]) - alt_penalty + psi_safety
-    if is_recovery: final_psi = max(40, final_psi * 0.9)
+    effective_neopos_delta = final_neopos_count - neopos_rec
 
-    # [UPDATED] Pressure Compensation for Cold
+    psi_safety = 0
+    if effective_neopos_delta < 0: psi_safety = abs(effective_neopos_delta) * 3.0
+    
+    raw_psi = base_psi - (final_neopos_count * CONFIG["NEOPOS_PSI_DROP"]) - alt_penalty + psi_safety
+    if is_recovery: raw_psi = max(40, raw_psi * 0.9)
+
+    # Valve Support Compensation
+    psi_correction_factor = 1.0 - (support_delta * 0.03)
+    final_psi = raw_psi * psi_correction_factor
+
     if weather == "Cold (<5°C)":
         final_psi = final_psi * 1.05
     
-    valve = "Bronze" if is_recovery else get_cts_valve(style_key, rider_kg, is_recovery)
-    
-    fork_reb = 10 + int((final_psi - 70) / 10)
-    
-    # [UPDATED] Aggressive Cold Mode (+5 clicks)
-    if weather == "Cold (<5°C)": fork_reb += 5
-    
+    # Fork Rebound (Inverted Logic applied)
+    fork_reb = 10 - int((final_psi - 70) / 10)
+    if weather == "Cold (<5°C)": fork_reb += 3
     fork_reb = max(2, min(CONFIG["REBOUND_CLICKS_FORK"], fork_reb))
     
-    lsc_fork_comp = 0
-    if neopos_delta < 0: lsc_fork_comp = -abs(neopos_delta)
-    if neopos_delta > 0: lsc_fork_comp = neopos_delta
+    # Fork LSC Compensation
+    lsc_valve_offset = int(support_delta * 1.5)
+    
+    lsc_neopos_offset = 0
+    if effective_neopos_delta < 0: lsc_neopos_offset = -abs(effective_neopos_delta)
+    if effective_neopos_delta > 0: lsc_neopos_offset = effective_neopos_delta
     
     fork_lsc = 12
-    if valve == "Gold": fork_lsc = 7
-    if valve == "Orange": fork_lsc = 5
-    if valve == "Blue": fork_lsc = 4
-    if valve == "Purple": fork_lsc = 10
+    if valve_ideal == "Gold": fork_lsc = 7
+    if valve_ideal == "Orange": fork_lsc = 5
+    if valve_ideal == "Blue": fork_lsc = 4
+    if valve_ideal == "Purple": fork_lsc = 10
+    if valve_ideal == "Bronze": fork_lsc = 8
     
-    fork_lsc += lsc_fork_comp
+    fork_lsc += lsc_neopos_offset + lsc_valve_offset
+    
     if weather == "Rain / Wet": fork_lsc = 12
     fork_lsc = max(0, min(12, fork_lsc))
     
@@ -232,17 +263,20 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
         "mod_rate": ideal_rate_exact,
         "active_rate": active_rate,
         "sag_actual": sag_actual_pct,
-        "std_rate": 25 * round(ideal_rate_exact / 25),
         "shock_reb": reb_clicks,
         "shock_lsc": lsc_clicks,
         "fork_psi": final_psi,
-        "fork_cts": valve,
-        "fork_neopos": neopos_final,
+        "fork_cts": valve_active,
+        "fork_cts_ideal": valve_ideal,
+        "fork_neopos": final_neopos_count,
         "neopos_rec": neopos_rec,
         "fork_reb": fork_reb,
         "fork_lsc": fork_lsc,
         "sag": final_sag_pct,
-        "bias": effective_bias_pct
+        "bias": effective_bias_pct,
+        "valve_mismatch": valve_mismatch,
+        "support_delta": support_delta,
+        "ramp_delta": ramp_delta
     }
 
 # ==========================================================
@@ -299,21 +333,12 @@ rec_neopos_peek = get_neopos_count(rider_kg, style_key, is_rec)
 st.divider()
 c1, c2 = st.columns(2)
 
-# [UPDATED] UI Text to match new constants
 st.info("""
 **Damping Reference:** Settings are clicks from **FULLY CLOSED** (Clockwise ↻).  
+**0** = Max Damping (Stiff). **Higher #** = Min Damping (Soft).
 
-**Formula Mod (Shock):**
-* **Compression:** 17 Click Adjustment
-* **Rebound:** 17 Click Adjustment
-
-**Formula Selva V (Fork):**
-* **Compression:** 12 Click Adjustment (Global gain: Fine-tunes **HSC & LSC** together).
-* **CTS Valve:** Defines the damping **behavior** (Curve Profile).
-* **Rebound:** 19 Click Adjustment
-
-**0** = Max Damping (Stiff).  
-**Higher #** = Min Damping (Soft).
+**Formula Mod:** Comp: 17 | Reb: 13 Clicks  
+**Formula Selva V:** Comp: 12 | Reb: 19 Clicks
 """)
 
 # --- LEFT COLUMN (SHOCK) ---
@@ -332,15 +357,25 @@ with c1:
 with c2:
     st.subheader("Formula Selva V (Air)")
     
-    neopos_select = st.select_slider(
-        "Neopos Config (Installed)", 
-        options=["Auto", "0", "1", "2", "3"], 
-        help=f"Auto recommends: {rec_neopos_peek}.",
-        key="neopos_override"
-    )
+    fc1, fc2 = st.columns(2)
+    with fc1:
+        valve_options = ["Auto"] + list(VALVE_SPECS.keys())
+        valve_select = st.selectbox(
+            "CTS Valve (Installed)",
+            options=valve_options,
+            help="Select the valve actually inside your fork.",
+            key="valve_override"
+        )
+    with fc2:
+        neopos_select = st.select_slider(
+            "Neopos Config (Installed)", 
+            options=["Auto", "0", "1", "2", "3"], 
+            help=f"Auto recommends: {rec_neopos_peek}.",
+            key="neopos_override"
+        )
 
 # --- RUN CALCULATION ---
-res = calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, target_sag, target_bias, altitude, weather, is_rec, neopos_select, spring_override)
+res = calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, target_sag, target_bias, altitude, weather, is_rec, neopos_select, spring_override, valve_select)
 
 # --- DISPLAY RESULTS ---
 with c1:
@@ -372,14 +407,19 @@ with c2:
     d3.metric("Rebound", f"{res['fork_reb']}", "Clicks from CLOSED")
     d4.metric("Compression", f"{res['fork_lsc']}", "Clicks from CLOSED")
     
+    if res['valve_mismatch']:
+        st.warning(f"⚠️ **Valve Compensation Active**")
+        if res['support_delta'] != 0:
+            action = "Lowered" if res['support_delta'] > 0 else "Increased"
+            st.caption(f"• PSI {action} for {res['fork_cts']} support.")
+        if res['ramp_delta'] != 0:
+            st.caption(f"• Neopos count adjusted for ramp profile.")
+    
     if is_rec:
-        st.warning("⚠️ Recovery Safety: High Neopos applied.")
+        st.warning("⚠️ Recovery Safety: Neopos reduced to prevent ramp-wall.")
     
     if rider_kg > 85 and style_key == "Steep / Tech" and res['fork_cts'] == "Orange":
         st.info("ℹ️ **Expert Note:** Orange valve selected for max anti-dive support.")
-    
-    if res['fork_neopos'] != res['neopos_rec']:
-        st.caption(f"⚠️ **Compensating:** Fork PSI & LSC adjusted for volume mismatch.")
 
 # PDF Generation
 def generate_pdf(data):
@@ -404,6 +444,8 @@ def generate_pdf(data):
     pdf.cell(200, 8, f"Pressure: {data['fork_psi']:.1f} psi", ln=True)
     pdf.cell(200, 8, f"Neopos: {data['fork_neopos']}", ln=True)
     pdf.cell(200, 8, f"CTS: {data['fork_cts']}", ln=True)
+    pdf.cell(200, 8, f"Rebound: {data['fork_reb']} clicks", ln=True)
+    pdf.cell(200, 8, f"Compression: {data['fork_lsc']} clicks", ln=True)
     
     return pdf.output(dest="S").encode("latin-1")
 
