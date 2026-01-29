@@ -39,9 +39,22 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
+# --- CALLBACKS FOR INTERACTIVITY ---
 def reset_form_callback():
     for key in list(st.session_state.keys()):
         del st.session_state[key]
+
+def update_rec_logic():
+    # If Recovery is turned ON, force Sag to 35% visually
+    if st.session_state.is_rec:
+        st.session_state.sag_slider = 35.0
+
+def update_style_logic():
+    # If Style changes, update Sag/Bias defaults (unless Recovery is on)
+    if not st.session_state.get('is_rec', False):
+        s_key = st.session_state.style_select
+        st.session_state.sag_slider = STYLES[s_key]["sag"]
+        st.session_state.bias_slider = STYLES[s_key]["bias"]
 
 # --- ENGINEERING CONSTANTS (CORRECTED 2026 SPEC) ---
 CONFIG = {
@@ -122,9 +135,13 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     rear_load_lbs = rear_load_kg * 2.20462
     
     # [EXISTING KINEMATICS...]
+    # Logic: If Recovery is ON, we force 35% in math, AND we trust the UI slider is now 35% due to callback
     final_sag_pct = 35.0 if is_recovery else sag_target
     sag_mm = CONFIG["SHOCK_STROKE_MM"] * (final_sag_pct / 100.0)
+    
     lr_at_sag = CONFIG["LEV_RATIO_START"] - (CONFIG["LEV_RATIO_COEFF"] * sag_mm)
+    
+    # Force & Rate
     spring_force_lbs = rear_load_lbs * lr_at_sag
     shock_compress_in = sag_mm / 25.4
     raw_rate = spring_force_lbs / shock_compress_in
@@ -234,6 +251,7 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
         "sag": final_sag_pct,
         "bias": effective_bias_pct
     }
+
 # ==========================================================
 # 3. UI MAIN
 # ==========================================================
@@ -259,7 +277,8 @@ col_rec, col_env1, col_env2 = st.columns(3)
 with col_rec:
     st.write("") 
     st.write("") 
-    is_rec = st.toggle("Recovery Mode", help="Max softness + Anti-Dive safety.", key="is_rec")
+    # [FIX] Added Callback to force Sag Slider Update
+    is_rec = st.toggle("Recovery Mode", help="Max softness + Anti-Dive safety.", key="is_rec", on_change=update_rec_logic)
 with col_env1:
     weather = st.selectbox("Weather", ["Standard", "Cold (<5°C)", "Rain / Wet"], key="weather")
 with col_env2:
@@ -270,15 +289,12 @@ st.markdown("---")
 st.subheader("2. Tuning")
 col_style, col_sag, col_bias = st.columns(3)
 
-def update_defaults():
-    s_key = st.session_state.style_select
-    st.session_state.sag_slider = STYLES[s_key]["sag"]
-    st.session_state.bias_slider = STYLES[s_key]["bias"]
-
 with col_style:
-    style_key = st.selectbox("Riding Style", list(STYLES.keys()), key="style_select", on_change=update_defaults)
+    # [FIX] Added Callback to update defaults
+    style_key = st.selectbox("Riding Style", list(STYLES.keys()), key="style_select", on_change=update_style_logic)
 
 with col_sag:
+    # Initialize defaults if empty
     if "sag_slider" not in st.session_state: st.session_state.sag_slider = 31.0
     target_sag = st.slider("Target Sag (%)", 30.0, 35.0, key="sag_slider", step=0.5, help="Nukeproof Kinematic Limit")
 
@@ -304,11 +320,10 @@ st.info("""
 # --- LEFT COLUMN (SHOCK) ---
 with c1:
     st.subheader("Formula MOD (Coil)")
-    # [Insert Image Tag Here if needed, ensure it is commented out or valid]
+    
     
     # SPRING RATE OVERRIDE INPUT
-    # We place this here so it sits visually in the Shock section
-    spring_options = ["Auto"] + [str(r) for r in range(300, 650, 5)] # 5lb increments
+    spring_options = ["Auto"] + [str(r) for r in range(300, 650, 5)] 
     spring_override = st.selectbox(
         "Actual Spring Rate (lbs)", 
         options=spring_options, 
@@ -334,7 +349,7 @@ with c2:
 # Pass the new spring_override variable
 res = calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, target_sag, target_bias, altitude, weather, is_rec, neopos_select, spring_override)
 
-# --- DISPLAY RESULTS (Updated) ---
+# --- DISPLAY RESULTS ---
 with c1:
     # Display Active Rate vs Ideal
     st.metric("Spring Rate", f"{res['active_rate']} lbs", delta=f"Ideal: {res['mod_rate']} lbs", delta_color="off")
@@ -349,8 +364,7 @@ with c1:
     
     if res['active_rate'] != res['mod_rate']:
          st.info("ℹ️ **Adaptive Tuning:** Damping adjusted to compensate for spring rate mismatch.")
-        
-# FORK OUTPUT (Right Column - continued)
+
 with c2:
     # We already rendered the Header and Slider above. Now rendering metrics.
     
