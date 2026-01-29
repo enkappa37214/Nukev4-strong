@@ -105,73 +105,74 @@ def get_neopos_count(weight, style, is_recovery):
     if weight < 65: val = 0
     return max(0, min(3, val))
 
-def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_manual, altitude, weather, is_recovery, neopos_select):
+def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_manual, altitude, weather, is_recovery, neopos_select, spring_override):
     s_data = STYLES[style_key]
     
-    # --- 1. NEOPOS LOGIC & COMPENSATION ---
-    # Calculate what should be there vs what is there
+    # [EXISTING NEOPOS LOGIC...] 
     neopos_rec = get_neopos_count(rider_kg, style_key, is_recovery)
-    
-    if neopos_select == "Auto":
-        neopos_final = neopos_rec
-    else:
-        neopos_final = int(neopos_select)
-        
-    # Calculate Mismatch (Delta)
-    # Negative Delta (e.g., -2) = Missing tokens (Too Linear) -> Needs Stiffness
-    # Positive Delta (e.g., +1) = Extra tokens (Too Progressive) -> Needs Softness
+    if neopos_select == "Auto": neopos_final = neopos_rec
+    else: neopos_final = int(neopos_select)
     neopos_delta = neopos_final - neopos_rec
-    
-    # 2. BIAS APPLICATION
+
+    # [EXISTING MASS/LOAD CALCS...]
     effective_bias_pct = bias_manual 
-    
-    # 3. MASS CALCULATIONS
     total_mass_kg = rider_kg + bike_kg
     sprung_mass_kg = total_mass_kg - unsprung_kg
-    
-    # Rear Load (Sprung only * Bias)
     rear_load_kg = sprung_mass_kg * (effective_bias_pct / 100.0)
     rear_load_lbs = rear_load_kg * 2.20462
     
-    # 4. KINEMATICS & SPRING (MOD)
+    # [EXISTING KINEMATICS...]
     final_sag_pct = 35.0 if is_recovery else sag_target
     sag_mm = CONFIG["SHOCK_STROKE_MM"] * (final_sag_pct / 100.0)
-    
     lr_at_sag = CONFIG["LEV_RATIO_START"] - (CONFIG["LEV_RATIO_COEFF"] * sag_mm)
-    
-    # Force & Rate
     spring_force_lbs = rear_load_lbs * lr_at_sag
     shock_compress_in = sag_mm / 25.4
     raw_rate = spring_force_lbs / shock_compress_in
-    
-    # [!] MOD CORRECTION (1.05x)
     mod_rate = raw_rate * CONFIG["MOD_FRICTION_CORRECTION"]
     
-    # [!] COMPENSATION: Spring Rate
-    # If front is Linear (Missing tokens), stiffen rear to balance dynamic ride height
+    # --- SPRING RATE COMPENSATION LOGIC ---
+    # 1. Calculate Ideal (including Neopos balance correction)
     rate_comp_lbs = 0
-    if neopos_delta < 0: rate_comp_lbs = abs(neopos_delta) * 10 # +10lbs per missing token
-    if neopos_delta > 0: rate_comp_lbs = -(neopos_delta * 5)   # -5lbs per extra token
+    if neopos_delta < 0: rate_comp_lbs = abs(neopos_delta) * 10
+    if neopos_delta > 0: rate_comp_lbs = -(neopos_delta * 5)
     
-    sprindex_rate = int(mod_rate + rate_comp_lbs)
-    std_rate = 25 * round((mod_rate + rate_comp_lbs) / 25)
+    ideal_rate_exact = int(mod_rate + rate_comp_lbs)
     
-    # 5. SHOCK DAMPING
-    # Rebound (1-13 Limit)
-    reb_clicks = 7 - int((sprindex_rate - 450) / 50)
+    # 2. Determine Actual Rate Used (Auto vs Override)
+    if spring_override == "Auto":
+        active_rate = ideal_rate_exact
+        rate_mismatch = 0
+    else:
+        active_rate = int(spring_override)
+        rate_mismatch = active_rate - ideal_rate_exact
+        
+    # 3. Calculate Resulting Sag (Approximation)
+    # If using stiffer spring, sag decreases. 
+    sag_actual_pct = final_sag_pct * (ideal_rate_exact / active_rate)
+
+    # --- SHOCK DAMPING (Adaptive) ---
+    # Rebound: Uses ACTIVE rate (Self-correcting: Heavier spring = Stiffer rebound)
+    reb_clicks = 7 - int((active_rate - 450) / 50)
     if weather == "Cold": reb_clicks += 2
     reb_clicks = max(1, min(13, reb_clicks))
     
-    # LSC
-    # [!] COMPENSATION: Shock LSC
-    # If front is diving (Linear), stiffen rear LSC to match system support
-    lsc_comp_clicks = 0
-    if neopos_delta < 0: lsc_comp_clicks = abs(neopos_delta) # +1 click per missing token
+    # LSC: Compensate for Spring Mismatch
+    # If Spring is Soft (Mismatch < 0) -> ADD LSC (Stiffen/Lower Click #)
+    # If Spring is Stiff (Mismatch > 0) -> REDUCE LSC (Soften/Higher Click #)
+    # Formula Mod: 1=Closed(Stiff), 13=Open(Soft). 
+    # Mismatch -50lbs -> Need Stiffer -> Subtract clicks.
+    lsc_spring_comp = int(rate_mismatch / 25) # e.g., -50lbs / 25 = -2 clicks (Stiffer)
     
-    base_lsc = 7 + s_data["lsc_offset"] + lsc_comp_clicks
-    if final_sag_pct > 32.0 and not is_recovery: base_lsc += 2
-    if weather == "Rain / Wet": base_lsc -= 2
-    if is_recovery: base_lsc = 1
+    # Neopos LSC Comp (Existing)
+    lsc_neo_comp = 0
+    if neopos_delta < 0: lsc_neo_comp = -abs(neopos_delta) # Stiffen if front diving
+    
+    base_lsc = 7 + s_data["lsc_offset"] + lsc_spring_comp + lsc_neo_comp
+    
+    if final_sag_pct > 32.0 and not is_recovery: base_lsc -= 1 # Deep sag needs support (Stiffen)
+    if weather == "Rain / Wet": base_lsc += 2 # Soften
+    if is_recovery: base_lsc = 12 # Open/Soft
+        
     lsc_clicks = max(1, min(13, base_lsc))
     
     # 6. FORK (SELVA V)
@@ -218,20 +219,21 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     fork_lsc = max(0, min(12, fork_lsc)) # Clamp
     
     return {
-        "mod_rate": sprindex_rate,
-        "std_rate": std_rate,
+        "mod_rate": ideal_rate_exact,   # The perfect math
+        "active_rate": active_rate,     # What is installed
+        "sag_actual": sag_actual_pct,   # Resulting sag
+        "std_rate": 25 * round(ideal_rate_exact / 25),
         "shock_reb": reb_clicks,
         "shock_lsc": lsc_clicks,
         "fork_psi": final_psi,
         "fork_cts": valve,
-        "fork_neopos": neopos_final, # Return what is physically installed
-        "neopos_rec": neopos_rec,    # Return what should be installed
+        "fork_neopos": neopos_final,
+        "neopos_rec": neopos_rec,
         "fork_reb": fork_reb,
         "fork_lsc": fork_lsc,
         "sag": final_sag_pct,
         "bias": effective_bias_pct
     }
-
 # ==========================================================
 # 3. UI MAIN
 # ==========================================================
@@ -288,57 +290,58 @@ with col_bias:
 # 4. CALCULATIONS & OUTPUT
 # ==========================================================
 
-# 1. UI: Calculate Recommended First to display "Auto" Logic
-# We need to peek at the recommendation before calling the full calculation
 rec_neopos_peek = get_neopos_count(rider_kg, style_key, is_rec)
 
-# 2. UI: Neopos Slider (Inserted in the main flow or Results? Request said "bellow CTS Valve/Neopos fields" in results)
-# However, to affect calculations, we need the input BEFORE running calculate_setup.
-# I will create a container for it here or simply put the slider logic here.
-
 st.divider()
-
 c1, c2 = st.columns(2)
 
-# FORK UI (Right Column - Setup Inputs for Neopos Override)
+# --- LEFT COLUMN (SHOCK) ---
+with c1:
+    st.subheader("Formula MOD (Coil)")
+    # [Insert Image Tag Here if needed, ensure it is commented out or valid]
+    
+    # SPRING RATE OVERRIDE INPUT
+    # We place this here so it sits visually in the Shock section
+    spring_options = ["Auto"] + [str(r) for r in range(300, 650, 5)] # 5lb increments
+    spring_override = st.selectbox(
+        "Actual Spring Rate (lbs)", 
+        options=spring_options, 
+        index=0,
+        help="Select your installed Sprindex/Coil rate to adapt damping."
+    )
+
+# --- RIGHT COLUMN (FORK) ---
 with c2:
     st.subheader("Formula Selva V (Air)")
     
-    
-    # Neopos Logic Slider
-    # We put this INPUT inside the result column as requested, but we must run calc after.
-    # Note: Streamlit runs top-down. To make this clean, we usually put inputs up top. 
-    # But to follow instructions "bellow CTS Valve", we can render the input here, 
-    # but we need to run the calculation *after* this slider exists.
-    
-    # Let's display the headers first, then the slider, then the metrics.
-    
+    # NEOPOS OVERRIDE INPUT
     neopos_select = st.select_slider(
         "Neopos Config (Installed)", 
         options=["Auto", "0", "1", "2", "3"], 
         value="Auto",
-        help=f"Auto recommends: {rec_neopos_peek}. Change this if your actual setup differs."
+        help=f"Auto recommends: {rec_neopos_peek}."
     )
 
-# RUN CALCULATION NOW (With the slider value)
-res = calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, target_sag, target_bias, altitude, weather, is_rec, neopos_select)
+# --- RUN CALCULATION ---
+# Pass the new spring_override variable
+res = calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, target_sag, target_bias, altitude, weather, is_rec, neopos_select, spring_override)
 
-# SHOCK OUTPUT (Left Column)
+# --- DISPLAY RESULTS (Updated) ---
 with c1:
-    st.subheader("Formula MOD (Coil)")
+    # Display Active Rate vs Ideal
+    st.metric("Spring Rate", f"{res['active_rate']} lbs", delta=f"Ideal: {res['mod_rate']} lbs", delta_color="off")
     
-    st.metric("Sprindex Rate", f"{res['mod_rate']} lbs", delta="Exact Rate")
-    st.caption(f"Standard Coil: {res['std_rate']} lbs")
-    
-    if is_rec and "Sprindex" not in st.session_state.get('spring_type_sel', ''): 
-        st.warning("⚠️ Recovery Mode: Progressive coil recommended.")
-        
+    # Warn if actual sag deviates significantly
+    if abs(res['sag_actual'] - res['sag']) > 2.0:
+        st.caption(f"⚠️ **Geometry Shift:** Estimated Sag {res['sag_actual']:.1f}% (Target {res['sag']}%)")
+
     d1, d2 = st.columns(2)
     d1.metric("Rebound", f"{res['shock_reb']}", "Clicks from CLOSED")
     d2.metric("Compression", f"{res['shock_lsc']}", "Clicks from CLOSED")
     
-    st.info(f"**Engineering:** Spring corrected (+5%) for frictionless bladder. LSC tuned for {res['sag']}% sag.")
-
+    if res['active_rate'] != res['mod_rate']:
+         st.info("ℹ️ **Adaptive Tuning:** Damping adjusted to compensate for spring rate mismatch.")
+        
 # FORK OUTPUT (Right Column - continued)
 with c2:
     # We already rendered the Header and Slider above. Now rendering metrics.
