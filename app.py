@@ -33,12 +33,11 @@ CONFIG = {
 
 # RIDING STYLES
 STYLES = {
-    
+    "Alpine Epic":       {"sag": 30.0, "bias": 65, "lsc_offset": -1, "desc": "Efficiency focus. Neutral bias."},
     "Flow / Park":       {"sag": 30.0, "bias": 63, "lsc_offset": -3, "desc": "Max Support. Forward bias."},
     "Dynamic":           {"sag": 31.0, "bias": 65, "lsc_offset": 0, "desc": "Balanced Enduro bias."},
-    "Alpine Epic":       {"sag": 32.0, "bias": 65, "lsc_offset": -1, "desc": "Efficiency focus. Neutral bias."},
-    "Trail":             {"sag": 33.0, "bias": 65, "lsc_offset": 0, "desc": "Chatter focus."},
-    "Steep / Tech":      {"sag": 34.0, "bias": 68, "lsc_offset": -2, "desc": "Geometry focus. Rearward bias."},
+    "Trail":             {"sag": 32.0, "bias": 65, "lsc_offset": 0, "desc": "Chatter focus."},
+    "Steep / Tech":      {"sag": 33.0, "bias": 68, "lsc_offset": -2, "desc": "Geometry focus. Rearward bias."},
     "Plush":             {"sag": 35.0, "bias": 65, "lsc_offset": 4, "desc": "Comfort max."}
 }
 
@@ -62,8 +61,8 @@ SHOCK_VALVE_SPECS = {
 
 # TIRE SPECS
 TIRE_CASINGS = {
-    "Reinforced (DD/SuperGravity)": -1.0,
     "Standard (EXO/SnakeSkin)": 0.0,
+    "Reinforced (DD/SuperGravity)": -1.0,
     "Downhill (DH/2-Ply)": -2.0
 }
 TIRE_WIDTHS = {
@@ -91,7 +90,9 @@ DEFAULTS = {
     "neopos_override": "Auto",
     "valve_override": "Auto",
     "shock_valve_override": "Auto",
-    "tire_casing": "Standard (EXO/SnakeSkin)",
+    # [UPDATED] Split Front/Rear Casing Defaults
+    "tire_casing_front": "Standard (EXO/SnakeSkin)",
+    "tire_casing_rear": "Standard (EXO/SnakeSkin)",
     "tire_width": "2.3\" - 2.4\"",
     "tire_insert": "None",
     "is_tubeless": True
@@ -181,7 +182,7 @@ def get_neopos_count(weight, style, is_recovery):
     if weight < 65: val = 0
     return max(0, min(3, val))
 
-def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_manual, altitude, weather, is_recovery, neopos_select, spring_override, fork_valve_override, shock_valve_override, tire_casing, tire_width, tire_insert, is_tubeless):
+def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_manual, altitude, weather, is_recovery, neopos_select, spring_override, fork_valve_override, shock_valve_override, tire_casing_front, tire_casing_rear, tire_width, tire_insert, is_tubeless):
     s_data = STYLES[style_key]
     
     # --- 1. CONFIGURATION ---
@@ -323,8 +324,13 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     base_r = 26.0 + weight_offset
     
     # Modifiers
-    casing_mod = TIRE_CASINGS.get(tire_casing, 0.0)
-    base_f += casing_mod; base_r += casing_mod
+    # [UPDATED] Front Casing Logic
+    casing_mod_f = TIRE_CASINGS.get(tire_casing_front, 0.0)
+    base_f += casing_mod_f
+    
+    # [UPDATED] Rear Casing Logic
+    casing_mod_r = TIRE_CASINGS.get(tire_casing_rear, 0.0)
+    base_r += casing_mod_r
     
     width_mod = TIRE_WIDTHS.get(tire_width, 0.0)
     base_f += width_mod; base_r += width_mod
@@ -418,20 +424,21 @@ with col_sag:
     target_sag = st.slider("Target Sag (%)", 30.0, 35.0, key="sag_slider", step=0.5, help="Nukeproof Kinematic Limit")
 
 with col_bias:
-    # [FIXED] Capped at 70% for safety
     target_bias = st.slider("Rear Bias (%)", 55, 70, key="bias_slider", help="Applied to Sprung Mass")
 
-# [NEW] Tire Section
+# [NEW] Tire Section - 5 Columns for cleaner layout
 st.markdown("---")
 st.subheader("3. Tires")
-t1, t2, t3, t4 = st.columns(4)
+t1, t2, t3, t4, t5 = st.columns(5)
 with t1:
-    tire_casing = st.selectbox("Casing", list(TIRE_CASINGS.keys()), key="tire_casing")
+    tire_casing_front = st.selectbox("Front Casing", list(TIRE_CASINGS.keys()), key="tire_casing_front")
 with t2:
-    tire_width = st.selectbox("Width", list(TIRE_WIDTHS.keys()), key="tire_width")
+    tire_casing_rear = st.selectbox("Rear Casing", list(TIRE_CASINGS.keys()), key="tire_casing_rear")
 with t3:
-    tire_insert = st.selectbox("Inserts", list(TIRE_INSERTS.keys()), key="tire_insert")
+    tire_width = st.selectbox("Width", list(TIRE_WIDTHS.keys()), key="tire_width")
 with t4:
+    tire_insert = st.selectbox("Inserts", list(TIRE_INSERTS.keys()), key="tire_insert")
+with t5:
     st.write("") 
     st.write("") 
     is_tubeless = st.toggle("Tubeless", value=True, key="is_tubeless")
@@ -495,7 +502,7 @@ with c2:
         )
 
 # --- RUN CALCULATION ---
-res = calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, target_sag, target_bias, altitude, weather, is_rec, neopos_select, spring_override, fork_valve_select, shock_valve_select, tire_casing, tire_width, tire_insert, is_tubeless)
+res = calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, target_sag, target_bias, altitude, weather, is_rec, neopos_select, spring_override, fork_valve_select, shock_valve_select, tire_casing_front, tire_casing_rear, tire_width, tire_insert, is_tubeless)
 
 # --- DISPLAY RESULTS ---
 st.markdown("### 🛞 Tire Pressure")
@@ -560,6 +567,7 @@ def generate_pdf(data):
     pdf.cell(200, 8, f"Rider: {rider_kg}kg | Bike: {bike_kg}kg", ln=True)
     pdf.cell(200, 8, f"Style: {style_key} | Weather: {weather}", ln=True)
     pdf.ln(5)
+    
     pdf.set_font("Arial", 'B', 12); pdf.cell(200, 10, "Tires", ln=True)
     pdf.set_font("Arial", size=10)
     pdf.cell(200, 8, f"Front: {data['tire_front']:.1f} psi", ln=True)
