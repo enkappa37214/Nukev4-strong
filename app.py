@@ -47,10 +47,10 @@ def initialize_state():
 
 def update_rec_logic():
     if st.session_state.is_rec:
+        # When ON: Force Sag to 35%
         st.session_state.sag_slider = 35.0
-
-def update_style_logic():
-    if not st.session_state.get('is_rec', False):
+    else:
+        # When OFF: Revert to the current Style's default Sag & Bias
         s_key = st.session_state.style_select
         if s_key in STYLES:
             st.session_state.sag_slider = STYLES[s_key]["sag"]
