@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from fpdf import FPDF
 import locale
+import streamlit.components.v1 as components # [FIX] Added for JS Scroll
 
 # Set locale for consistent number formatting
 try:
@@ -10,9 +11,19 @@ except locale.Error:
     locale.setlocale(locale.LC_ALL, 'C')
 
 # ==========================================================
-# 1. CONFIGURATION & CONSTANTS (MOVED TO TOP)
+# 1. CONFIGURATION & CONSTANTS
 # ==========================================================
 st.set_page_config(page_title="Nukeproof Mega v4 - Formula Expert", page_icon="⚡", layout="centered")
+
+# [FIX] Force Scroll to Top on Refresh (Mobile Fix)
+components.html(
+    """
+    <script>
+        window.parent.document.querySelector("section.main").scrollTo(0, 0);
+    </script>
+    """, 
+    height=0
+)
 
 # --- ENGINEERING CONSTANTS ---
 CONFIG = {
@@ -29,12 +40,12 @@ CONFIG = {
     "REBOUND_CLICKS_FORK": 19,    
 }
 
-# --- DATA DICTIONARIES (Moved here to prevent NameError) ---
+# --- DATA DICTIONARIES ---
 
 # RIDING STYLES
 STYLES = {
     "Flow / Park":       {"sag": 30.0, "bias": 63, "lsc_offset": -3, "desc": "Max Support. Forward bias."},
-    "Dynamic":           {"sag": 31.0, "bias": 64, "lsc_offset": 0, "desc": "Balanced Enduro bias."},
+    "Dynamic":           {"sag": 31.0, "bias": 65, "lsc_offset": 0, "desc": "Balanced Enduro bias."},
     "Alpine Epic":       {"sag": 32.0, "bias": 65, "lsc_offset": -1, "desc": "Efficiency focus. Neutral bias."},
     "Trail":             {"sag": 33.0, "bias": 65, "lsc_offset": 0, "desc": "Chatter focus."},
     "Steep / Tech":      {"sag": 34.0, "bias": 68, "lsc_offset": -2, "desc": "Geometry focus. Rearward bias."},
@@ -321,11 +332,9 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     base_r = 26.0 + weight_offset
     
     # Modifiers
-    # [UPDATED] Front Casing Logic
     casing_mod_f = TIRE_CASINGS.get(tire_casing_front, 0.0)
     base_f += casing_mod_f
     
-    # [UPDATED] Rear Casing Logic
     casing_mod_r = TIRE_CASINGS.get(tire_casing_rear, 0.0)
     base_r += casing_mod_r
     
@@ -392,8 +401,7 @@ with col_reset:
 st.subheader("1. Configuration")
 col_w1, col_w2, col_w3 = st.columns(3)
 with col_w1:
-    with col_w1:
-        rider_kg = st.number_input("Rider Weight (kg)", 40.0, 140.0, step=0.5, key="rider_kg", help="Fully kitted weight.")
+    rider_kg = st.number_input("Rider Weight (kg)", 40.0, 140.0, step=0.5, key="rider_kg", help="Fully kitted weight.")
 with col_w2:
     bike_kg = st.number_input("Bike Weight (kg)", 10.0, 30.0, step=0.1, key="bike_kg")
 with col_w3:
