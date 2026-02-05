@@ -36,7 +36,7 @@ STYLES = {
     "Flow / Park":       {"sag": 30.0, "bias": 63, "lsc_offset": -3, "desc": "Max Support. Forward bias."},
     "Dynamic":           {"sag": 31.0, "bias": 64, "lsc_offset": 0, "desc": "Balanced Enduro bias."},
     "Alpine Epic":       {"sag": 32.0, "bias": 65, "lsc_offset": -1, "desc": "Efficiency focus. Neutral bias."},
-    "Trail":             {"sag": 33.0, "bias": 60, "lsc_offset": 0, "desc": "Chatter focus."},
+    "Trail":             {"sag": 33.0, "bias": 65, "lsc_offset": 0, "desc": "Chatter focus."},
     "Steep / Tech":      {"sag": 34.0, "bias": 68, "lsc_offset": -2, "desc": "Geometry focus. Rearward bias."},
     "Plush":             {"sag": 35.0, "bias": 65, "lsc_offset": 4, "desc": "Comfort max."}
 }
@@ -83,16 +83,15 @@ DEFAULTS = {
     "is_rec": False,
     "weather": "Standard",
     "altitude": 500,
-    "style_select": "Alpine Epic",
-    "sag_slider": 31.0,
+    "style_select": "Trail",
+    "sag_slider": 33.0,
     "bias_slider": 65,
     "spring_override": "Auto",
     "neopos_override": "Auto",
     "valve_override": "Auto",
     "shock_valve_override": "Auto",
-    # [UPDATED] Split Front/Rear Casing Defaults
-    "tire_casing_front": "Standard (EXO/SnakeSkin)",
-    "tire_casing_rear": "Standard (EXO/SnakeSkin)",
+    "tire_casing_front": "Reinforced (DD/SuperGravity)",
+    "tire_casing_rear": "Reinforced (DD/SuperGravity)",
     "tire_width": "2.3\" - 2.4\"",
     "tire_insert": "None",
     "is_tubeless": True
@@ -108,11 +107,9 @@ def initialize_state():
             st.session_state[key] = value
 
 def update_rec_logic():
-    # [FIXED] Handles logic for turning Recovery ON and OFF
     if st.session_state.is_rec:
         st.session_state.sag_slider = 35.0
     else:
-        # Revert to selected style defaults
         s_key = st.session_state.style_select
         if s_key in STYLES:
             st.session_state.sag_slider = STYLES[s_key]["sag"]
