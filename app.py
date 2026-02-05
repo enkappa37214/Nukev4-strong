@@ -62,8 +62,8 @@ SHOCK_VALVE_SPECS = {
 
 # TIRE SPECS
 TIRE_CASINGS = {
-    "Standard (EXO/SnakeSkin)": 0.0,
     "Reinforced (DD/SuperGravity)": -1.0,
+    "Standard (EXO/SnakeSkin)": 0.0,
     "Downhill (DH/2-Ply)": -2.0
 }
 TIRE_WIDTHS = {
