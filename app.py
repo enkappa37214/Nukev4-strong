@@ -28,7 +28,12 @@ DEFAULTS = {
     "spring_override": "Auto",
     "neopos_override": "Auto",
     "valve_override": "Auto",
-    "shock_valve_override": "Auto"
+    "shock_valve_override": "Auto",
+    # [NEW] Tire Defaults
+    "tire_casing": "Standard (EXO/SnakeSkin)",
+    "tire_width": "2.3\" - 2.4\"",
+    "tire_insert": "None",
+    "is_tubeless": True
 }
 
 # --- CALLBACKS ---
@@ -112,6 +117,24 @@ SHOCK_VALVE_SPECS = {
     "Green":  {"support": 8, "ramp": 8}, # Stiffest
 }
 
+# [NEW] Tire Specs
+TIRE_CASINGS = {
+    "Standard (EXO/SnakeSkin)": 0.0,
+    "Reinforced (DD/SuperGravity)": -1.0,
+    "Downhill (DH/2-Ply)": -2.0
+}
+
+TIRE_WIDTHS = {
+    "2.3\" - 2.4\"": 0.0,
+    "2.5\" - 2.6\"": -1.5
+}
+
+TIRE_INSERTS = {
+    "None": {"f": 0.0, "r": 0.0},
+    "Rear Only": {"f": 0.0, "r": -1.5},
+    "Both": {"f": -1.5, "r": -1.5}
+}
+
 STYLES = {
     "Alpine Epic":       {"sag": 30.0, "bias": 65, "lsc_offset": -1, "desc": "Efficiency focus. Neutral bias."},
     "Flow / Park":       {"sag": 30.0, "bias": 63, "lsc_offset": -3, "desc": "Max Support. Forward bias."},
@@ -160,7 +183,7 @@ def get_neopos_count(weight, style, is_recovery):
     if weight < 65: val = 0
     return max(0, min(3, val))
 
-def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_manual, altitude, weather, is_recovery, neopos_select, spring_override, fork_valve_override, shock_valve_override):
+def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_manual, altitude, weather, is_recovery, neopos_select, spring_override, fork_valve_override, shock_valve_override, tire_casing, tire_width, tire_insert, is_tubeless):
     s_data = STYLES[style_key]
     
     # --- 1. CONFIGURATION ---
@@ -293,6 +316,53 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     
     if weather == "Rain / Wet": fork_lsc = 12
     fork_lsc = max(0, min(12, fork_lsc))
+
+    # --- 5. TIRE PRESSURE CALCULATIONS ---
+    # Baseline: 75kg rider -> 23F / 26R. scaling +1psi per 5kg
+    # Total system weight approximation
+    weight_offset = (rider_kg - 75.0) / 5.0
+    
+    base_f = 23.0 + weight_offset
+    base_r = 26.0 + weight_offset
+    
+    # Modifiers
+    # 1. Casing
+    casing_mod = TIRE_CASINGS.get(tire_casing, 0.0)
+    base_f += casing_mod
+    base_r += casing_mod
+    
+    # 2. Width
+    width_mod = TIRE_WIDTHS.get(tire_width, 0.0)
+    base_f += width_mod
+    base_r += width_mod
+    
+    # 3. Inserts
+    insert_mod = TIRE_INSERTS.get(tire_insert, {"f":0.0, "r":0.0})
+    base_f += insert_mod["f"]
+    base_r += insert_mod["r"]
+    
+    # 4. Tubeless
+    if not is_tubeless:
+        base_f += 4.0
+        base_r += 4.0
+        
+    # 5. Style
+    if style_key == "Flow / Park":
+        base_f += 2.0; base_r += 2.0
+    elif style_key == "Steep / Tech":
+        base_f -= 1.0; base_r -= 1.0
+    elif style_key == "Alpine Epic":
+        base_f += 1.0; base_r += 1.0
+        
+    # 6. Weather
+    if weather == "Rain / Wet":
+        base_f -= 2.0; base_r -= 2.0
+    elif weather == "Cold (<5°C)":
+        base_f -= 1.0; base_r -= 1.0
+        
+    # Sanity Clamp (18 - 35 PSI)
+    final_f_psi = max(18.0, min(35.0, base_f))
+    final_r_psi = max(18.0, min(35.0, base_r))
     
     return {
         "mod_rate": ideal_rate_exact,
@@ -313,7 +383,9 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
         "fork_valve_mismatch": fork_valve_mismatch,
         "shock_valve_mismatch": shock_valve_mismatch,
         "fork_support_delta": fork_support_delta,
-        "shock_support_delta": shock_support_delta
+        "shock_support_delta": shock_support_delta,
+        "tire_front": final_f_psi,
+        "tire_rear": final_r_psi
     }
 
 # ==========================================================
@@ -361,6 +433,21 @@ with col_sag:
 
 with col_bias:
     target_bias = st.slider("Rear Bias (%)", 55, 80, key="bias_slider", help="Applied to Sprung Mass")
+
+# [NEW] Tire Section
+st.markdown("---")
+st.subheader("3. Tires")
+t1, t2, t3, t4 = st.columns(4)
+with t1:
+    tire_casing = st.selectbox("Casing", list(TIRE_CASINGS.keys()), key="tire_casing")
+with t2:
+    tire_width = st.selectbox("Width", list(TIRE_WIDTHS.keys()), key="tire_width")
+with t3:
+    tire_insert = st.selectbox("Inserts", list(TIRE_INSERTS.keys()), key="tire_insert")
+with t4:
+    st.write("") 
+    st.write("") 
+    is_tubeless = st.toggle("Tubeless", value=True, key="is_tubeless")
 
 # ==========================================================
 # 4. CALCULATIONS & OUTPUT
@@ -423,9 +510,16 @@ with c2:
         )
 
 # --- RUN CALCULATION ---
-res = calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, target_sag, target_bias, altitude, weather, is_rec, neopos_select, spring_override, fork_valve_select, shock_valve_select)
+res = calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, target_sag, target_bias, altitude, weather, is_rec, neopos_select, spring_override, fork_valve_select, shock_valve_select, tire_casing, tire_width, tire_insert, is_tubeless)
 
 # --- DISPLAY RESULTS ---
+# [NEW] Tire Pressure Row
+st.markdown("### 🛞 Tire Pressure")
+tp1, tp2 = st.columns(2)
+tp1.metric("Front Tire", f"{res['tire_front']:.1f} psi")
+tp2.metric("Rear Tire", f"{res['tire_rear']:.1f} psi")
+st.markdown("---")
+
 with c1:
     st.metric("Spring Rate", f"{res['active_rate']} lbs", delta=f"Ideal: {res['mod_rate']} lbs", delta_color="off")
     
@@ -481,6 +575,13 @@ def generate_pdf(data):
     
     pdf.cell(200, 8, f"Rider: {rider_kg}kg | Bike: {bike_kg}kg | Unsprung: {unsprung_kg}kg", ln=True)
     pdf.cell(200, 8, f"Style: {style_key} | Weather: {weather}", ln=True)
+    pdf.ln(5)
+    # [NEW] Tires
+    pdf.set_font("Arial", 'B', 12); pdf.cell(200, 10, "Tires", ln=True)
+    pdf.set_font("Arial", size=10)
+    pdf.cell(200, 8, f"Front: {data['tire_front']:.1f} psi", ln=True)
+    pdf.cell(200, 8, f"Rear: {data['tire_rear']:.1f} psi", ln=True)
+
     pdf.ln(5)
     pdf.set_font("Arial", 'B', 12); pdf.cell(200, 10, "Formula MOD", ln=True)
     pdf.set_font("Arial", size=10)
