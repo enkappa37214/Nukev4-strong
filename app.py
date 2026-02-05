@@ -10,11 +10,72 @@ except locale.Error:
     locale.setlocale(locale.LC_ALL, 'C')
 
 # ==========================================================
-# 1. CONFIGURATION & STATE MANAGEMENT
+# 1. CONFIGURATION & CONSTANTS (MOVED TO TOP)
 # ==========================================================
 st.set_page_config(page_title="Nukeproof Mega v4 - Formula Expert", page_icon="⚡", layout="centered")
 
-# --- DEFAULT VALUES REGISTRY ---
+# --- ENGINEERING CONSTANTS ---
+CONFIG = {
+    "SHOCK_STROKE_MM": 62.5,
+    "LEV_RATIO_START": 2.90,
+    "LEV_RATIO_COEFF": 0.00816,
+    "MOD_FRICTION_CORRECTION": 1.05, 
+    "REBOUND_CLICKS_SHOCK": 13,   
+    "COMP_CLICKS_SHOCK": 17,      
+    "FORK_PSI_BASE_OFFSET": 65.0,
+    "FORK_PSI_PER_KG": 0.88,
+    "NEOPOS_PSI_DROP": 2.0,
+    "ALTITUDE_PSI_DROP": 1.5,
+    "REBOUND_CLICKS_FORK": 19,    
+}
+
+# --- DATA DICTIONARIES (Moved here to prevent NameError) ---
+
+# RIDING STYLES
+STYLES = {
+    "Alpine Epic":       {"sag": 30.0, "bias": 65, "lsc_offset": -1, "desc": "Efficiency focus. Neutral bias."},
+    "Flow / Park":       {"sag": 30.0, "bias": 63, "lsc_offset": -3, "desc": "Max Support. Forward bias."},
+    "Dynamic":           {"sag": 31.0, "bias": 65, "lsc_offset": 0, "desc": "Balanced Enduro bias."},
+    "Trail":             {"sag": 32.0, "bias": 65, "lsc_offset": 0, "desc": "Chatter focus."},
+    "Steep / Tech":      {"sag": 33.0, "bias": 68, "lsc_offset": -2, "desc": "Geometry focus. Rearward bias."},
+    "Plush":             {"sag": 35.0, "bias": 65, "lsc_offset": 4, "desc": "Comfort max."}
+}
+
+# FORK VALVE SPECS
+FORK_VALVE_SPECS = {
+    "Purple": {"support": 2, "ramp": 2}, 
+    "Blue":   {"support": 3, "ramp": 7}, 
+    "Gold":   {"support": 5, "ramp": 5}, 
+    "Orange": {"support": 7, "ramp": 6}, 
+    "Green":  {"support": 8, "ramp": 8}, 
+    "Bronze": {"support": 2, "ramp": 9}, 
+    "Red":    {"support": 6, "ramp": 7}, 
+}
+
+# SHOCK VALVE SPECS
+SHOCK_VALVE_SPECS = {
+    "Gold":   {"support": 3, "ramp": 3},
+    "Orange": {"support": 5, "ramp": 5},
+    "Green":  {"support": 8, "ramp": 8},
+}
+
+# TIRE SPECS
+TIRE_CASINGS = {
+    "Standard (EXO/SnakeSkin)": 0.0,
+    "Reinforced (DD/SuperGravity)": -1.0,
+    "Downhill (DH/2-Ply)": -2.0
+}
+TIRE_WIDTHS = {
+    "2.3\" - 2.4\"": 0.0,
+    "2.5\" - 2.6\"": -1.5
+}
+TIRE_INSERTS = {
+    "None": {"f": 0.0, "r": 0.0},
+    "Rear Only": {"f": 0.0, "r": -1.5},
+    "Both": {"f": -1.5, "r": -1.5}
+}
+
+# --- STATE MANAGEMENT ---
 DEFAULTS = {
     "rider_kg": 72.0,
     "bike_kg": 15.1,
@@ -29,7 +90,6 @@ DEFAULTS = {
     "neopos_override": "Auto",
     "valve_override": "Auto",
     "shock_valve_override": "Auto",
-    # [NEW] Tire Defaults
     "tire_casing": "Standard (EXO/SnakeSkin)",
     "tire_width": "2.3\" - 2.4\"",
     "tire_insert": "None",
@@ -46,11 +106,18 @@ def initialize_state():
             st.session_state[key] = value
 
 def update_rec_logic():
+    # [FIXED] Handles logic for turning Recovery ON and OFF
     if st.session_state.is_rec:
-        # When ON: Force Sag to 35%
         st.session_state.sag_slider = 35.0
     else:
-        # When OFF: Revert to the current Style's default Sag & Bias
+        # Revert to selected style defaults
+        s_key = st.session_state.style_select
+        if s_key in STYLES:
+            st.session_state.sag_slider = STYLES[s_key]["sag"]
+            st.session_state.bias_slider = STYLES[s_key]["bias"]
+
+def update_style_logic():
+    if not st.session_state.get('is_rec', False):
         s_key = st.session_state.style_select
         if s_key in STYLES:
             st.session_state.sag_slider = STYLES[s_key]["sag"]
@@ -81,69 +148,6 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
-# --- ENGINEERING CONSTANTS ---
-CONFIG = {
-    "SHOCK_STROKE_MM": 62.5,
-    "LEV_RATIO_START": 2.90,
-    "LEV_RATIO_COEFF": 0.00816,
-    "MOD_FRICTION_CORRECTION": 1.05, 
-    "REBOUND_CLICKS_SHOCK": 13,   
-    "COMP_CLICKS_SHOCK": 17,      
-    "FORK_PSI_BASE_OFFSET": 65.0,
-    "FORK_PSI_PER_KG": 0.88,
-    "NEOPOS_PSI_DROP": 2.0,
-    "ALTITUDE_PSI_DROP": 1.5,
-    "REBOUND_CLICKS_FORK": 19,    
-}
-
-# --- VALVE SPECS (SEPARATED) ---
-
-# FORK (Selva V) - Full Range
-FORK_VALVE_SPECS = {
-    "Purple": {"support": 2, "ramp": 2}, 
-    "Blue":   {"support": 3, "ramp": 7}, 
-    "Gold":   {"support": 5, "ramp": 5}, 
-    "Orange": {"support": 7, "ramp": 6}, 
-    "Green":  {"support": 8, "ramp": 8}, 
-    "Bronze": {"support": 2, "ramp": 9}, 
-    "Red":    {"support": 6, "ramp": 7}, 
-}
-
-# SHOCK (Mod) - Restricted Range [Gold, Orange, Green]
-# Scores normalized to Shock physics context
-SHOCK_VALVE_SPECS = {
-    "Gold":   {"support": 3, "ramp": 3}, # Softest
-    "Orange": {"support": 5, "ramp": 5}, # Standard
-    "Green":  {"support": 8, "ramp": 8}, # Stiffest
-}
-
-# [NEW] Tire Specs
-TIRE_CASINGS = {
-    "Standard (EXO/SnakeSkin)": 0.0,
-    "Reinforced (DD/SuperGravity)": -1.0,
-    "Downhill (DH/2-Ply)": -2.0
-}
-
-TIRE_WIDTHS = {
-    "2.3\" - 2.4\"": 0.0,
-    "2.5\" - 2.6\"": -1.5
-}
-
-TIRE_INSERTS = {
-    "None": {"f": 0.0, "r": 0.0},
-    "Rear Only": {"f": 0.0, "r": -1.5},
-    "Both": {"f": -1.5, "r": -1.5}
-}
-
-STYLES = {
-    "Alpine Epic":       {"sag": 32.0, "bias": 65, "lsc_offset": -1, "desc": "Efficiency focus. Neutral bias."},
-    "Flow / Park":       {"sag": 30.0, "bias": 63, "lsc_offset": -3, "desc": "Max Support. Forward bias."},
-    "Dynamic":           {"sag": 31.0, "bias": 65, "lsc_offset": 0, "desc": "Balanced Enduro bias."},
-    "Trail":             {"sag": 33.0, "bias": 65, "lsc_offset": 0, "desc": "Chatter focus."},
-    "Steep / Tech":      {"sag": 34.0, "bias": 68, "lsc_offset": -2, "desc": "Geometry focus. Rearward bias."},
-    "Plush":             {"sag": 35.0, "bias": 65, "lsc_offset": 4, "desc": "Comfort max."}
-}
-
 # ==========================================================
 # 2. HELPER FUNCTIONS
 # ==========================================================
@@ -161,18 +165,11 @@ def get_fork_cts(style, weight, is_recovery):
     return "Gold"
 
 def get_shock_cts_ideal(style, weight, is_recovery):
-    # [FIXED] Restricted to Gold, Orange, Green
     if is_recovery: return "Gold"
-    
-    # 1. Weight Overrides (Physics Priority)
-    if weight > 90: return "Green" # Heavy riders need Green
-    if weight < 70: return "Gold"  # Light riders need Gold
-    
-    # 2. Style Logic
+    if weight > 90: return "Green" # Heavy riders
+    if weight < 70: return "Gold"  # Light riders
     if style == "Plush": return "Gold"
-    
-    # 3. Standard Baseline
-    return "Orange" # Covers Flow, Tech, Trail for average weights
+    return "Orange" # Standard
 
 def get_neopos_count(weight, style, is_recovery):
     if is_recovery: return 1
@@ -221,7 +218,7 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     fork_support_delta = fork_active_scores["support"] - fork_ideal_scores["support"]
     fork_ramp_delta = fork_active_scores["ramp"] - fork_ideal_scores["ramp"]
 
-    # Shock [FIXED] Uses SHOCK_VALVE_SPECS
+    # Shock
     shock_ideal_scores = SHOCK_VALVE_SPECS.get(shock_valve_ideal, SHOCK_VALVE_SPECS["Orange"])
     shock_active_scores = SHOCK_VALVE_SPECS.get(shock_valve_active, SHOCK_VALVE_SPECS["Orange"])
     shock_support_delta = shock_active_scores["support"] - shock_ideal_scores["support"]
@@ -319,34 +316,24 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
 
     # --- 5. TIRE PRESSURE CALCULATIONS ---
     # Baseline: 75kg rider -> 23F / 26R. scaling +1psi per 5kg
-    # Total system weight approximation
     weight_offset = (rider_kg - 75.0) / 5.0
     
     base_f = 23.0 + weight_offset
     base_r = 26.0 + weight_offset
     
     # Modifiers
-    # 1. Casing
     casing_mod = TIRE_CASINGS.get(tire_casing, 0.0)
-    base_f += casing_mod
-    base_r += casing_mod
+    base_f += casing_mod; base_r += casing_mod
     
-    # 2. Width
     width_mod = TIRE_WIDTHS.get(tire_width, 0.0)
-    base_f += width_mod
-    base_r += width_mod
+    base_f += width_mod; base_r += width_mod
     
-    # 3. Inserts
     insert_mod = TIRE_INSERTS.get(tire_insert, {"f":0.0, "r":0.0})
-    base_f += insert_mod["f"]
-    base_r += insert_mod["r"]
+    base_f += insert_mod["f"]; base_r += insert_mod["r"]
     
-    # 4. Tubeless
     if not is_tubeless:
-        base_f += 4.0
-        base_r += 4.0
+        base_f += 4.0; base_r += 4.0
         
-    # 5. Style
     if style_key == "Flow / Park":
         base_f += 2.0; base_r += 2.0
     elif style_key == "Steep / Tech":
@@ -354,13 +341,11 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     elif style_key == "Alpine Epic":
         base_f += 1.0; base_r += 1.0
         
-    # 6. Weather
     if weather == "Rain / Wet":
         base_f -= 2.0; base_r -= 2.0
     elif weather == "Cold (<5°C)":
         base_f -= 1.0; base_r -= 1.0
         
-    # Sanity Clamp (18 - 35 PSI)
     final_f_psi = max(18.0, min(35.0, base_f))
     final_r_psi = max(18.0, min(35.0, base_r))
     
@@ -432,6 +417,7 @@ with col_sag:
     target_sag = st.slider("Target Sag (%)", 30.0, 35.0, key="sag_slider", step=0.5, help="Nukeproof Kinematic Limit")
 
 with col_bias:
+    # [FIXED] Capped at 70% for safety
     target_bias = st.slider("Rear Bias (%)", 55, 70, key="bias_slider", help="Applied to Sprung Mass")
 
 # [NEW] Tire Section
@@ -479,7 +465,6 @@ with c1:
             key="spring_override"
         )
     with sc2:
-        # [FIXED] Selector uses SHOCK_VALVE_SPECS keys
         shock_valve_options = ["Auto"] + list(SHOCK_VALVE_SPECS.keys())
         shock_valve_select = st.selectbox(
             "CTS Valve (Shock)",
@@ -494,7 +479,6 @@ with c2:
     
     fc1, fc2 = st.columns(2)
     with fc1:
-        # [FIXED] Selector uses FORK_VALVE_SPECS keys
         fork_valve_options = ["Auto"] + list(FORK_VALVE_SPECS.keys())
         fork_valve_select = st.selectbox(
             "CTS Valve (Installed)",
@@ -513,7 +497,6 @@ with c2:
 res = calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, target_sag, target_bias, altitude, weather, is_rec, neopos_select, spring_override, fork_valve_select, shock_valve_select, tire_casing, tire_width, tire_insert, is_tubeless)
 
 # --- DISPLAY RESULTS ---
-# [NEW] Tire Pressure Row
 st.markdown("### 🛞 Tire Pressure")
 tp1, tp2 = st.columns(2)
 tp1.metric("Front Tire", f"{res['tire_front']:.1f} psi")
@@ -573,10 +556,9 @@ def generate_pdf(data):
     pdf.cell(200, 10, "Nukeproof Mega v4 Setup Report", ln=True, align='C')
     pdf.set_font("Arial", size=11); pdf.ln(10)
     
-    pdf.cell(200, 8, f"Rider: {rider_kg}kg | Bike: {bike_kg}kg | Unsprung: {unsprung_kg}kg", ln=True)
+    pdf.cell(200, 8, f"Rider: {rider_kg}kg | Bike: {bike_kg}kg", ln=True)
     pdf.cell(200, 8, f"Style: {style_key} | Weather: {weather}", ln=True)
     pdf.ln(5)
-    # [NEW] Tires
     pdf.set_font("Arial", 'B', 12); pdf.cell(200, 10, "Tires", ln=True)
     pdf.set_font("Arial", size=10)
     pdf.cell(200, 8, f"Front: {data['tire_front']:.1f} psi", ln=True)
