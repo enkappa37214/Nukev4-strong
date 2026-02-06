@@ -92,6 +92,7 @@ DEFAULTS = {
     "trail_condition": "Dry",
     "altitude": 500,
     "style_select": "Trail",
+    "previous_style": "Trail", # [NEW] Added for Recovery Logic
     "sag_slider": 33.0,
     "bias_slider": 65,
     "spring_override": "Auto",
@@ -114,21 +115,26 @@ def initialize_state():
         if key not in st.session_state:
             st.session_state[key] = value
 
-def update_rec_logic():
-    if st.session_state.is_rec:
-        st.session_state.sag_slider = 35.0
-    else:
-        s_key = st.session_state.style_select
-        if s_key in STYLES:
-            st.session_state.sag_slider = STYLES[s_key]["sag"]
-            st.session_state.bias_slider = STYLES[s_key]["bias"]
-
 def update_style_logic():
     if not st.session_state.get('is_rec', False):
         s_key = st.session_state.style_select
         if s_key in STYLES:
             st.session_state.sag_slider = STYLES[s_key]["sag"]
             st.session_state.bias_slider = STYLES[s_key]["bias"]
+
+# [UPDATED] Recovery Logic with Snapshot/Restore
+def update_rec_logic():
+    if st.session_state.is_rec:
+        # Snapshot current style
+        st.session_state.previous_style = st.session_state.style_select
+        # Overwrite
+        st.session_state.style_select = "Plush"
+        st.session_state.sag_slider = 35.0
+    else:
+        # Restore previous style
+        st.session_state.style_select = st.session_state.get("previous_style", "Trail")
+        # Trigger updates to reset sag/bias
+        update_style_logic()
 
 # Initialize State
 initialize_state()
@@ -271,22 +277,22 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
         lsc_adj_shock += 1
         reb_adj_fork += 2
         lsc_adj_fork += 1
-        fork_psi_mult = 1.02 
+        fork_psi_mult = 1.02 # approx 2%
     elif temperature == "Freezing (<0°C)":
         reb_adj_shock += 5
         lsc_adj_shock += 3
         reb_adj_fork += 5
         lsc_adj_fork += 2
-        fork_psi_mult = 1.05 
+        fork_psi_mult = 1.05 # approx 5%
 
     # 2. Condition Logic (Traction / Compliance)
     if trail_condition == "Wet":
-        lsc_adj_shock += 1 
-        lsc_adj_fork += 1  
+        lsc_adj_shock += 1 # Softer for grip
+        lsc_adj_fork += 1  # Softer for grip
         tire_psi_adj -= 1.0
     elif trail_condition == "Mud":
-        lsc_adj_shock += 2 
-        lsc_adj_fork += 2  
+        lsc_adj_shock += 2 # Max grip
+        lsc_adj_fork += 2  # Max grip
         tire_psi_adj -= 2.0
     
     # [NEW] Frozen Compound Logic
@@ -295,7 +301,7 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
 
     # --- SHOCK DAMPING APPLY ---
     reb_clicks = 7 - int((active_rate - 450) / 50)
-    reb_clicks += reb_adj_shock 
+    reb_clicks += reb_adj_shock # Apply Temp Adj
     reb_clicks = max(1, min(CONFIG["REBOUND_CLICKS_SHOCK"], reb_clicks))
     
     # Compression
@@ -311,7 +317,7 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     
     if final_sag_pct > 32.0 and not is_recovery: base_lsc -= 1
     
-    base_lsc += lsc_adj_shock 
+    base_lsc += lsc_adj_shock # Apply Temp + Cond Adj
     
     if is_recovery: base_lsc = 17 
         
@@ -338,7 +344,7 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     final_psi = final_psi * fork_psi_mult
     
     fork_reb = 10 - int((final_psi - 70) / 10)
-    fork_reb += reb_adj_fork 
+    fork_reb += reb_adj_fork # Apply Temp Adj
     fork_reb = max(2, min(CONFIG["REBOUND_CLICKS_FORK"], fork_reb))
     
     lsc_valve_offset = int(fork_support_delta * 1.5)
@@ -355,7 +361,7 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     if fork_valve_ideal == "Bronze": fork_lsc = 8
     
     fork_lsc += lsc_neopos_offset + lsc_valve_offset
-    fork_lsc += lsc_adj_fork 
+    fork_lsc += lsc_adj_fork # Apply Temp + Cond Adj
     
     fork_lsc = max(0, min(12, fork_lsc))
 
@@ -393,18 +399,24 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     base_f += tire_psi_adj
     base_r += tire_psi_adj
     
-    # Apply Temp Multiplier (Indoor Inflation Protocol)
+    # [NEW] Apply Temp Multiplier (Indoor Inflation Protocol)
     final_f_psi = max(18.0, min(35.0, base_f)) * fork_psi_mult
     final_r_psi = max(18.0, min(35.0, base_r)) * fork_psi_mult
     
+    # Calculate Total Adjustment Values for Visualization
+    shock_reb_total_adj = reb_adj_shock
+    shock_lsc_total_adj = lsc_adj_shock
+    fork_reb_total_adj = reb_adj_fork
+    fork_lsc_total_adj = lsc_adj_fork
+
     return {
         "mod_rate": ideal_rate_exact,
         "active_rate": active_rate,
         "sag_actual": sag_actual_pct,
         "shock_reb": reb_clicks,
         "shock_lsc": lsc_clicks,
-        "shock_reb_adj": reb_adj_shock, # [NEW]
-        "shock_lsc_adj": lsc_adj_shock, # [NEW]
+        "shock_reb_adj": shock_reb_total_adj,
+        "shock_lsc_adj": shock_lsc_total_adj,
         "fork_psi": final_psi,
         "fork_cts": fork_valve_active,
         "shock_cts": shock_valve_active,
@@ -413,8 +425,8 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
         "neopos_rec": neopos_rec,
         "fork_reb": fork_reb,
         "fork_lsc": fork_lsc,
-        "fork_reb_adj": reb_adj_fork, # [NEW]
-        "fork_lsc_adj": lsc_adj_fork, # [NEW]
+        "fork_reb_adj": fork_reb_total_adj,
+        "fork_lsc_adj": fork_lsc_total_adj,
         "sag": final_sag_pct,
         "bias": effective_bias_pct,
         "fork_valve_mismatch": fork_valve_mismatch,
@@ -468,7 +480,14 @@ st.subheader("2. Tuning")
 col_style, col_sag, col_bias = st.columns(3)
 
 with col_style:
-    style_key = st.selectbox("Riding Style", list(STYLES.keys()), key="style_select", on_change=update_style_logic)
+    # [UPDATED] Disabled when Recovery Mode is Active
+    style_key = st.selectbox(
+        "Riding Style", 
+        list(STYLES.keys()), 
+        key="style_select", 
+        on_change=update_style_logic,
+        disabled=st.session_state.is_rec
+    )
 
 with col_sag:
     target_sag = st.slider("Target Sag (%)", 30.0, 35.0, key="sag_slider", step=0.5, help="Nukeproof Kinematic Limit")
@@ -552,7 +571,7 @@ with c2:
         )
 
 # --- RUN CALCULATION ---
-res = calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, target_sag, target_bias, altitude, temperature, trail_condition, is_rec, neopos_select, spring_override, fork_valve_select, shock_valve_select, tire_casing_front, tire_casing_rear, tire_width, tire_insert, is_tubeless)
+res = calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, target_sag, target_bias, altitude, temperature, trail_condition, is_rec, neopos_select, spring_override, fork_valve_override, shock_valve_override, tire_casing_front, tire_casing_rear, tire_width, tire_insert, is_tubeless)
 
 # --- DISPLAY RESULTS ---
 st.markdown("### 🛞 Tire Pressure")
