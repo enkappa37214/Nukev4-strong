@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 from fpdf import FPDF
 import locale
-import streamlit.components.v1 as components # [FIX] Added for JS Scroll
 
 # Set locale for consistent number formatting
 try:
@@ -11,19 +10,9 @@ except locale.Error:
     locale.setlocale(locale.LC_ALL, 'C')
 
 # ==========================================================
-# 1. CONFIGURATION & CONSTANTS
+# 1. CONFIGURATION & CONSTANTS (MOVED TO TOP)
 # ==========================================================
 st.set_page_config(page_title="Nukeproof Mega v4 - Formula Expert", page_icon="⚡", layout="centered")
-
-# [FIX] Force Scroll to Top on Refresh (Mobile Fix)
-components.html(
-    """
-    <script>
-        window.parent.document.querySelector("section.main").scrollTo(0, 0);
-    </script>
-    """, 
-    height=0
-)
 
 # --- ENGINEERING CONSTANTS ---
 CONFIG = {
@@ -40,15 +29,15 @@ CONFIG = {
     "REBOUND_CLICKS_FORK": 19,    
 }
 
-# --- DATA DICTIONARIES ---
+# --- DATA DICTIONARIES (Moved here to prevent NameError) ---
 
 # RIDING STYLES
 STYLES = {
+    "Alpine Epic":       {"sag": 30.0, "bias": 65, "lsc_offset": -1, "desc": "Efficiency focus. Neutral bias."},
     "Flow / Park":       {"sag": 30.0, "bias": 63, "lsc_offset": -3, "desc": "Max Support. Forward bias."},
     "Dynamic":           {"sag": 31.0, "bias": 65, "lsc_offset": 0, "desc": "Balanced Enduro bias."},
-    "Alpine Epic":       {"sag": 32.0, "bias": 65, "lsc_offset": -1, "desc": "Efficiency focus. Neutral bias."},
-    "Trail":             {"sag": 33.0, "bias": 65, "lsc_offset": 0, "desc": "Chatter focus."},
-    "Steep / Tech":      {"sag": 34.0, "bias": 68, "lsc_offset": -2, "desc": "Geometry focus. Rearward bias."},
+    "Trail":             {"sag": 32.0, "bias": 65, "lsc_offset": 0, "desc": "Chatter focus."},
+    "Steep / Tech":      {"sag": 33.0, "bias": 68, "lsc_offset": -2, "desc": "Geometry focus. Rearward bias."},
     "Plush":             {"sag": 35.0, "bias": 65, "lsc_offset": 4, "desc": "Comfort max."}
 }
 
@@ -94,15 +83,15 @@ DEFAULTS = {
     "is_rec": False,
     "weather": "Standard",
     "altitude": 500,
-    "style_select": "Trail",
-    "sag_slider": 33.0,
+    "style_select": "Alpine Epic",
+    "sag_slider": 31.0,
     "bias_slider": 65,
     "spring_override": "Auto",
     "neopos_override": "Auto",
     "valve_override": "Auto",
     "shock_valve_override": "Auto",
-    "tire_casing_front": "Reinforced (DD/SuperGravity)",
-    "tire_casing_rear": "Reinforced (DD/SuperGravity)",
+    "tire_casing_front": "Standard (EXO/SnakeSkin)",
+    "tire_casing_rear": "Standard (EXO/SnakeSkin)",
     "tire_width": "2.3\" - 2.4\"",
     "tire_insert": "None",
     "is_tubeless": True
@@ -278,6 +267,10 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     
     if final_sag_pct > 32.0 and not is_recovery: base_lsc -= 1
     if weather == "Rain / Wet": base_lsc += 2
+    
+    # [NEW] Proposal A: Winter Shock LSC Compensation
+    if weather == "Cold (<5°C)": base_lsc += 3 
+    
     if is_recovery: base_lsc = 17 
         
     lsc_clicks = max(1, min(CONFIG["COMP_CLICKS_SHOCK"], base_lsc))
@@ -401,7 +394,8 @@ with col_reset:
 st.subheader("1. Configuration")
 col_w1, col_w2, col_w3 = st.columns(3)
 with col_w1:
-    rider_kg = st.number_input("Rider Weight (kg)", 40.0, 140.0, step=0.5, key="rider_kg", help="Fully kitted weight.")
+    with col_w1:
+        rider_kg = st.number_input("Rider Weight (kg)", 40.0, 140.0, step=0.5, key="rider_kg", help="Fully kitted weight.")
 with col_w2:
     bike_kg = st.number_input("Bike Weight (kg)", 10.0, 30.0, step=0.1, key="bike_kg")
 with col_w3:
