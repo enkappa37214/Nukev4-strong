@@ -271,31 +271,31 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
         lsc_adj_shock += 1
         reb_adj_fork += 2
         lsc_adj_fork += 1
-        fork_psi_mult = 1.02 # approx 2%
+        fork_psi_mult = 1.02 
     elif temperature == "Freezing (<0°C)":
         reb_adj_shock += 5
         lsc_adj_shock += 3
         reb_adj_fork += 5
         lsc_adj_fork += 2
-        fork_psi_mult = 1.05 # approx 5%
+        fork_psi_mult = 1.05 
 
     # 2. Condition Logic (Traction / Compliance)
     if trail_condition == "Wet":
-        lsc_adj_shock += 1 # Softer for grip
-        lsc_adj_fork += 1  # Softer for grip
+        lsc_adj_shock += 1 
+        lsc_adj_fork += 1  
         tire_psi_adj -= 1.0
     elif trail_condition == "Mud":
-        lsc_adj_shock += 2 # Max grip
-        lsc_adj_fork += 2  # Max grip
+        lsc_adj_shock += 2 
+        lsc_adj_fork += 2  
         tire_psi_adj -= 2.0
     
     # [NEW] Frozen Compound Logic
     if temperature == "Freezing (<0°C)" and trail_condition == "Dry":
-        tire_psi_adj -= 1.0 # Compensate for hard rubber
+        tire_psi_adj -= 1.0
 
     # --- SHOCK DAMPING APPLY ---
     reb_clicks = 7 - int((active_rate - 450) / 50)
-    reb_clicks += reb_adj_shock # Apply Temp Adj
+    reb_clicks += reb_adj_shock 
     reb_clicks = max(1, min(CONFIG["REBOUND_CLICKS_SHOCK"], reb_clicks))
     
     # Compression
@@ -311,7 +311,7 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     
     if final_sag_pct > 32.0 and not is_recovery: base_lsc -= 1
     
-    base_lsc += lsc_adj_shock # Apply Temp + Cond Adj
+    base_lsc += lsc_adj_shock 
     
     if is_recovery: base_lsc = 17 
         
@@ -338,7 +338,7 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     final_psi = final_psi * fork_psi_mult
     
     fork_reb = 10 - int((final_psi - 70) / 10)
-    fork_reb += reb_adj_fork # Apply Temp Adj
+    fork_reb += reb_adj_fork 
     fork_reb = max(2, min(CONFIG["REBOUND_CLICKS_FORK"], fork_reb))
     
     lsc_valve_offset = int(fork_support_delta * 1.5)
@@ -355,7 +355,7 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     if fork_valve_ideal == "Bronze": fork_lsc = 8
     
     fork_lsc += lsc_neopos_offset + lsc_valve_offset
-    fork_lsc += lsc_adj_fork # Apply Temp + Cond Adj
+    fork_lsc += lsc_adj_fork 
     
     fork_lsc = max(0, min(12, fork_lsc))
 
@@ -393,7 +393,7 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     base_f += tire_psi_adj
     base_r += tire_psi_adj
     
-    # [NEW] Apply Temp Multiplier (Indoor Inflation Protocol)
+    # Apply Temp Multiplier (Indoor Inflation Protocol)
     final_f_psi = max(18.0, min(35.0, base_f)) * fork_psi_mult
     final_r_psi = max(18.0, min(35.0, base_r)) * fork_psi_mult
     
@@ -403,6 +403,8 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
         "sag_actual": sag_actual_pct,
         "shock_reb": reb_clicks,
         "shock_lsc": lsc_clicks,
+        "shock_reb_adj": reb_adj_shock, # [NEW]
+        "shock_lsc_adj": lsc_adj_shock, # [NEW]
         "fork_psi": final_psi,
         "fork_cts": fork_valve_active,
         "shock_cts": shock_valve_active,
@@ -411,6 +413,8 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
         "neopos_rec": neopos_rec,
         "fork_reb": fork_reb,
         "fork_lsc": fork_lsc,
+        "fork_reb_adj": reb_adj_fork, # [NEW]
+        "fork_lsc_adj": lsc_adj_fork, # [NEW]
         "sag": final_sag_pct,
         "bias": effective_bias_pct,
         "fork_valve_mismatch": fork_valve_mismatch,
@@ -570,8 +574,9 @@ with c1:
     st.metric("CTS Valve", res['shock_cts'])
 
     d1, d2 = st.columns(2)
-    d1.metric("Rebound", f"{res['shock_reb']}", "Clicks from CLOSED")
-    d2.metric("Compression", f"{res['shock_lsc']}", "Clicks from CLOSED")
+    # [TRANSPARENCY UPDATE]
+    d1.metric("Rebound", f"{res['shock_reb']}", delta=f"{res['shock_reb_adj']:+d} (Winter)" if res['shock_reb_adj'] != 0 else None)
+    d2.metric("Compression", f"{res['shock_lsc']}", delta=f"{res['shock_lsc_adj']:+d} (Cond)" if res['shock_lsc_adj'] != 0 else None)
     
     if res['shock_valve_mismatch']:
         st.warning(f"⚠️ **Shock Compensation Active**")
@@ -595,8 +600,9 @@ with c2:
     h2.metric("Neopos Count", neo_label, delta_color="off")
     
     d3, d4 = st.columns(2)
-    d3.metric("Rebound", f"{res['fork_reb']}", "Clicks from CLOSED")
-    d4.metric("Compression", f"{res['fork_lsc']}", "Clicks from CLOSED")
+    # [TRANSPARENCY UPDATE]
+    d3.metric("Rebound", f"{res['fork_reb']}", delta=f"{res['fork_reb_adj']:+d} (Winter)" if res['fork_reb_adj'] != 0 else None)
+    d4.metric("Compression", f"{res['fork_lsc']}", delta=f"{res['fork_lsc_adj']:+d} (Cond)" if res['fork_lsc_adj'] != 0 else None)
     
     if res['fork_valve_mismatch']:
         st.warning(f"⚠️ **Valve Compensation Active**")
