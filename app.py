@@ -82,6 +82,65 @@ TIRE_INSERTS = {
     "Both": {"f": -1.5, "r": -1.5}
 }
 
+# --- DIAGNOSTIC KNOWLEDGE BASE ---
+DIAGNOSTIC_PROBLEMS = {
+    "None (Fresh Setup)": {"action": "none", "msg": ""},
+    
+    # --- FRONT END ---
+    "Front: Washing out in corners": {
+        "diagnosis": "Fork staying too high, tire not loading.",
+        "action": "soften_fork_lsc",
+        "value": 2,
+        "msg": "Opened Fork LSC (+2) to help load the front tire."
+    },
+    "Front: Diving under braking": {
+        "diagnosis": "Fork collapsing under mass transfer.",
+        "action": "stiffen_fork_lsc",
+        "value": -2,
+        "msg": "Closed Fork LSC (-2) to add chassis support."
+    },
+    "Front: Harsh Spiking (Roots/Rocks)": { 
+        "diagnosis": "High-speed oil flow restricted. Valve is too stiff.",
+        "action": "softer_fork_valve", 
+        "value": "Gold", 
+        "msg": "⚠️ **Hardware Limit:** Clickers cannot fix high-speed spiking. Switch to a Softer CTS Valve (e.g., Gold)."
+    },
+    
+    # --- REAR END ---
+    "Rear: Bucking on jumps (OTB)": {
+        "diagnosis": "Shock releasing energy too fast.",
+        "action": "slow_shock_reb",
+        "value": -2,
+        "msg": "Slowed Shock Rebound (-2) to control return energy."
+    },
+    "Rear: Harsh Bottom Out": { 
+        "diagnosis": "Spring rate insufficient for hit size.",
+        "action": "increase_spring", 
+        "value": 25,
+        "msg": "⚠️ **Hardware Limit:** Hydraulics overwhelmed. Increase Spring Rate by ~25 lbs."
+    },
+    "Rear: Top-stroke harshness": { 
+        "diagnosis": "Excessive preload fighting initial movement.",
+        "action": "check_preload",
+        "value": 0,
+        "msg": "⚠️ **Setup Check:** Ensure Spring Preload is < 2 turns. If sag is low, go down a spring rate."
+    },
+
+    # --- CHASSIS ---
+    "Chassis: Dead / No Pop": {
+        "diagnosis": "System over-damped, absorbing all energy.",
+        "action": "speed_global_reb",
+        "value": 2,
+        "msg": "Opened Rebound F&R (+2) to bring the life back."
+    },
+    "Chassis: Pitching Forward (Seesaw)": { 
+        "diagnosis": "Rear pushing front down (Rebound imbalance).",
+        "action": "balance_pitch",
+        "value": 0,
+        "msg": "Slowed Rear Rebound (-2) and Sped up Fork Rebound (+1) to level the chassis."
+    }
+}
+
 # --- STATE MANAGEMENT ---
 DEFAULTS = {
     "rider_kg": 72.0,
@@ -103,7 +162,8 @@ DEFAULTS = {
     "tire_casing_rear": "Reinforced (DD/SuperGravity)",
     "tire_width": "2.3\" - 2.4\"",
     "tire_insert": "None",
-    "is_tubeless": True
+    "is_tubeless": True,
+    "problem_select": "None (Fresh Setup)"
 }
 
 # --- CALLBACKS ---
@@ -188,7 +248,7 @@ def get_neopos_count(weight, style, is_recovery):
     if weight < 65: val = 0
     return max(0, min(3, val))
 
-def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_manual, altitude, temperature, trail_condition, is_recovery, neopos_select, spring_override, fork_valve_override, shock_valve_override, tire_casing_front, tire_casing_rear, tire_width, tire_insert, is_tubeless):
+def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_manual, altitude, temperature, trail_condition, is_recovery, neopos_select, spring_override, fork_valve_override, shock_valve_override, tire_casing_front, tire_casing_rear, tire_width, tire_insert, is_tubeless, problem_select):
     s_data = STYLES[style_key]
     
     # --- 1. CONFIGURATION ---
@@ -265,6 +325,7 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     fork_psi_mult = 1.0
     tire_psi_adj = 0.0
 
+    # 1. Temperature Logic
     if temperature == "Cool (0-10°C)":
         reb_adj_shock += 2; lsc_adj_shock += 1
         reb_adj_fork += 2; lsc_adj_fork += 1
@@ -274,6 +335,7 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
         reb_adj_fork += 5; lsc_adj_fork += 2
         fork_psi_mult = 1.05 
 
+    # 2. Condition Logic
     if trail_condition == "Wet":
         lsc_adj_shock += 1; lsc_adj_fork += 1  
         tire_psi_adj -= 1.0
@@ -284,11 +346,41 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     if temperature == "Freezing (<0°C)" and trail_condition == "Dry":
         tire_psi_adj -= 1.0
 
-    # --- SHOCK DAMPING ---
+    # --- DIAGNOSTIC LAYER (Post-Physics) ---
+    diag_shock_reb = 0
+    diag_shock_lsc = 0
+    diag_fork_reb = 0
+    diag_fork_lsc = 0
+    diag_msg = None
+    hardware_msg = None
+    
+    if problem_select != "None (Fresh Setup)":
+        task = DIAGNOSTIC_PROBLEMS.get(problem_select, {})
+        action = task.get("action", "")
+        val = task.get("value", 0)
+        diag_msg = task.get("msg", "")
+        
+        # Parse Actions
+        if action == "soften_fork_lsc": diag_fork_lsc += val
+        elif action == "stiffen_fork_lsc": diag_fork_lsc += val
+        elif action == "slow_shock_reb": diag_shock_reb += val
+        elif action == "speed_global_reb":
+            diag_shock_reb += val
+            diag_fork_reb += val
+        elif action == "balance_pitch":
+            diag_shock_reb -= 2
+            diag_fork_reb += 1
+        # Hardware Flags
+        elif action in ["softer_fork_valve", "increase_spring", "check_preload"]:
+            hardware_msg = diag_msg
+
+    # --- FINAL DAMPING APPLY ---
+    # Shock Rebound
     reb_clicks = 7 - int((active_rate - 450) / 50)
-    reb_clicks += reb_adj_shock 
+    reb_clicks += reb_adj_shock + diag_shock_reb
     reb_clicks = max(1, min(CONFIG["REBOUND_CLICKS_SHOCK"], reb_clicks))
     
+    # Shock Compression
     lsc_spring_comp = int(rate_mismatch / 25) 
     neopos_delta = neopos_installed - neopos_rec
     lsc_chassis_bal = 0
@@ -298,11 +390,11 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     base_lsc = 9 + s_data["lsc_offset"] + lsc_spring_comp + lsc_chassis_bal + lsc_shock_valve_offset
     if final_sag_pct > 32.0 and not is_recovery: base_lsc -= 1
     
-    base_lsc += lsc_adj_shock 
+    base_lsc += lsc_adj_shock + diag_shock_lsc
     if is_recovery: base_lsc = 17 
     lsc_clicks = max(1, min(CONFIG["COMP_CLICKS_SHOCK"], base_lsc))
 
-    # --- 4. FORK CALCULATIONS ---
+    # Fork
     base_psi = CONFIG["FORK_PSI_BASE_OFFSET"] + ((rider_kg - 75) * CONFIG["FORK_PSI_PER_KG"])
     alt_penalty = (altitude / 1000.0) * CONFIG["ALTITUDE_PSI_DROP"]
     neopos_correction = int(fork_ramp_delta / 3) 
@@ -318,10 +410,12 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     final_psi = raw_psi * psi_correction_factor
     final_psi = final_psi * fork_psi_mult
     
+    # Fork Rebound
     fork_reb = 10 - int((final_psi - 70) / 10)
-    fork_reb += reb_adj_fork 
+    fork_reb += reb_adj_fork + diag_fork_reb
     fork_reb = max(2, min(CONFIG["REBOUND_CLICKS_FORK"], fork_reb))
     
+    # Fork Compression
     lsc_valve_offset = int(fork_support_delta * 1.5)
     lsc_neopos_offset = 0
     if effective_neopos_delta < 0: lsc_neopos_offset = -abs(effective_neopos_delta)
@@ -335,10 +429,10 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     if fork_valve_ideal == "Bronze": fork_lsc = 8
     
     fork_lsc += lsc_neopos_offset + lsc_valve_offset
-    fork_lsc += lsc_adj_fork 
+    fork_lsc += lsc_adj_fork + diag_fork_lsc
     fork_lsc = max(0, min(12, fork_lsc))
 
-    # --- 5. TIRE PRESSURE ---
+    # Tires
     weight_offset = (rider_kg - 75.0) / 5.0
     base_f = 23.0 + weight_offset
     base_r = 26.0 + weight_offset
@@ -354,10 +448,15 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     insert_mod = TIRE_INSERTS.get(tire_insert, {"f":0.0, "r":0.0})
     base_f += insert_mod["f"]; base_r += insert_mod["r"]
     
-    if not is_tubeless: base_f += 4.0; base_r += 4.0
-    if style_key == "Flow / Park": base_f += 2.0; base_r += 2.0
-    elif style_key == "Steep / Tech": base_f -= 1.0; base_r -= 1.0
-    elif style_key == "Alpine Epic": base_f += 1.0; base_r += 1.0
+    if not is_tubeless:
+        base_f += 4.0; base_r += 4.0
+        
+    if style_key == "Flow / Park":
+        base_f += 2.0; base_r += 2.0
+    elif style_key == "Steep / Tech":
+        base_f -= 1.0; base_r -= 1.0
+    elif style_key == "Alpine Epic":
+        base_f += 1.0; base_r += 1.0
     
     base_f += tire_psi_adj
     base_r += tire_psi_adj
@@ -365,14 +464,20 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     final_f_psi = max(18.0, min(35.0, base_f)) * fork_psi_mult
     final_r_psi = max(18.0, min(35.0, base_r)) * fork_psi_mult
     
+    # Calculate Total Adjustment Values for Visualization
+    shock_reb_total_adj = reb_adj_shock + diag_shock_reb
+    shock_lsc_total_adj = lsc_adj_shock + diag_shock_lsc
+    fork_reb_total_adj = reb_adj_fork + diag_fork_reb
+    fork_lsc_total_adj = lsc_adj_fork + diag_fork_lsc
+
     return {
         "mod_rate": ideal_rate_exact,
         "active_rate": active_rate,
         "sag_actual": sag_actual_pct,
         "shock_reb": reb_clicks,
         "shock_lsc": lsc_clicks,
-        "shock_reb_adj": reb_adj_shock,
-        "shock_lsc_adj": lsc_adj_shock,
+        "shock_reb_adj": shock_reb_total_adj,
+        "shock_lsc_adj": shock_lsc_total_adj,
         "fork_psi": final_psi,
         "fork_cts": fork_valve_active,
         "shock_cts": shock_valve_active,
@@ -381,8 +486,8 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
         "neopos_rec": neopos_rec,
         "fork_reb": fork_reb,
         "fork_lsc": fork_lsc,
-        "fork_reb_adj": reb_adj_fork,
-        "fork_lsc_adj": lsc_adj_fork,
+        "fork_reb_adj": fork_reb_total_adj,
+        "fork_lsc_adj": fork_lsc_total_adj,
         "sag": final_sag_pct,
         "bias": effective_bias_pct,
         "fork_valve_mismatch": fork_valve_mismatch,
@@ -390,7 +495,13 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
         "fork_support_delta": fork_support_delta,
         "shock_support_delta": shock_support_delta,
         "tire_front": final_f_psi,
-        "tire_rear": final_r_psi
+        "tire_rear": final_r_psi,
+        "diag_msg": diag_msg,
+        "hardware_msg": hardware_msg,
+        "diag_shock_reb_val": diag_shock_reb,
+        "diag_shock_lsc_val": diag_shock_lsc,
+        "diag_fork_reb_val": diag_fork_reb,
+        "diag_fork_lsc_val": diag_fork_lsc
     }
 
 # ==========================================================
@@ -425,7 +536,6 @@ with col_env1:
 with col_env2:
     trail_condition = st.selectbox("Trail Condition", ["Dry", "Wet", "Mud"], key="trail_condition")
 
-# Altitude Row
 col_alt, col_dummy = st.columns([0.5, 0.5])
 with col_alt:
     altitude = st.number_input("Max Altitude (m)", 0, 3000, step=50, key="altitude")
@@ -434,17 +544,13 @@ st.markdown("---")
 
 st.subheader("2. Tuning")
 col_style, col_sag, col_bias = st.columns(3)
-
 with col_style:
     style_key = st.selectbox("Riding Style", list(STYLES.keys()), key="style_select", on_change=update_style_logic, disabled=st.session_state.is_rec)
-
 with col_sag:
     target_sag = st.slider("Target Sag (%)", 30.0, 35.0, key="sag_slider", step=0.5, help="Nukeproof Kinematic Limit")
-
 with col_bias:
     target_bias = st.slider("Rear Bias (%)", 55, 70, key="bias_slider", help="Applied to Sprung Mass")
 
-# [NEW] Tire Section - 5 Columns for cleaner layout
 st.markdown("---")
 st.subheader("3. Tires")
 t1, t2, t3, t4, t5 = st.columns(5)
@@ -460,6 +566,15 @@ with t5:
     st.write("") 
     st.write("") 
     is_tubeless = st.toggle("Tubeless", value=True, key="is_tubeless")
+
+# [NEW] DIAGNOSTICS SECTION
+st.markdown("---")
+st.subheader("4. Diagnostics (Post-Ride)")
+problem_select = st.selectbox(
+    "Did you experience any issues?",
+    list(DIAGNOSTIC_PROBLEMS.keys()),
+    key="problem_select"
+)
 
 # ==========================================================
 # 4. CALCULATIONS & OUTPUT
@@ -485,19 +600,10 @@ with c1:
     sc1, sc2 = st.columns(2)
     with sc1:
         spring_options = ["Auto"] + [str(r) for r in range(300, 650, 5)] 
-        spring_override = st.selectbox(
-            "Spring Rate (lbs)", 
-            options=spring_options, 
-            key="spring_override"
-        )
+        spring_override = st.selectbox("Spring Rate (lbs)", options=spring_options, key="spring_override")
     with sc2:
         shock_valve_options = ["Auto"] + list(SHOCK_VALVE_SPECS.keys())
-        shock_valve_select = st.selectbox(
-            "CTS Valve (Shock)",
-            options=shock_valve_options,
-            help="Select Gold, Orange, or Green.",
-            key="shock_valve_override"
-        )
+        shock_valve_select = st.selectbox("CTS Valve (Shock)", options=shock_valve_options, help="Select Gold, Orange, or Green.", key="shock_valve_override")
 
 # --- RIGHT COLUMN (FORK) ---
 with c2:
@@ -506,22 +612,13 @@ with c2:
     fc1, fc2 = st.columns(2)
     with fc1:
         fork_valve_options = ["Auto"] + list(FORK_VALVE_SPECS.keys())
-        fork_valve_select = st.selectbox(
-            "CTS Valve (Installed)",
-            options=fork_valve_options,
-            key="valve_override"
-        )
+        fork_valve_select = st.selectbox("CTS Valve (Installed)", options=fork_valve_options, key="valve_override")
     with fc2:
-        neopos_select = st.select_slider(
-            "Neopos (Installed)", 
-            options=["Auto", "0", "1", "2", "3"], 
-            help=f"Auto recommends: {rec_neopos_peek}.",
-            key="neopos_override"
-        )
+        neopos_select = st.select_slider("Neopos (Installed)", options=["Auto", "0", "1", "2", "3"], help=f"Auto recommends: {rec_neopos_peek}.", key="neopos_override")
 
 # --- RUN CALCULATION ---
-# [FIXED] Updated function call to use correct variable names
-res = calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, target_sag, target_bias, altitude, temperature, trail_condition, is_rec, neopos_select, spring_override, fork_valve_select, shock_valve_select, tire_casing_front, tire_casing_rear, tire_width, tire_insert, is_tubeless)
+# [FIXED] Updated function call to use correct variable names including problem_select
+res = calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, target_sag, target_bias, altitude, temperature, trail_condition, is_rec, neopos_select, spring_override, fork_valve_select, shock_valve_select, tire_casing_front, tire_casing_rear, tire_width, tire_insert, is_tubeless, problem_select)
 
 # --- DISPLAY RESULTS ---
 st.markdown("### 🛞 Tire Pressure")
@@ -534,42 +631,69 @@ if temperature != "Standard (>10°C)":
 
 st.markdown("---")
 
+# Display Diagnostic Message
+if res['diag_msg']:
+    st.info(f"🔧 **Diagnostic Active:** {res['diag_msg']}")
+
 with c1:
     st.metric("Spring Rate", f"{res['active_rate']} lbs", delta=f"Ideal: {res['mod_rate']} lbs", delta_color="off")
-    
     if abs(res['sag_actual'] - res['sag']) > 2.0:
         st.caption(f"⚠️ **Geometry Shift:** Estimated Sag {res['sag_actual']:.1f}%")
+    
+    # [HARDWARE WARNING - SHOCK]
+    if res['hardware_msg'] and "Spring" in res['hardware_msg']:
+        st.error(res['hardware_msg'])
+    elif res['hardware_msg'] and "Preload" in res['hardware_msg']:
+        st.warning(res['hardware_msg'])
 
     st.metric("CTS Valve", res['shock_cts'])
 
     d1, d2 = st.columns(2)
-    d1.metric("Rebound", f"{res['shock_reb']}", delta=f"{res['shock_reb_adj']:+d} (Winter)" if res['shock_reb_adj'] != 0 else None)
-    d2.metric("Compression", f"{res['shock_lsc']}", delta=f"{res['shock_lsc_adj']:+d} (Cond)" if res['shock_lsc_adj'] != 0 else None)
+    
+    # Custom Delta String for Shock
+    d_reb_str = None
+    if res['diag_shock_reb_val'] != 0: d_reb_str = f"{res['diag_shock_reb_val']:+d} (Diag)"
+    elif res['shock_reb_adj'] != 0: d_reb_str = f"{res['shock_reb_adj']:+d} (Winter)"
+
+    d_lsc_str = None
+    if res['diag_shock_lsc_val'] != 0: d_lsc_str = f"{res['diag_shock_lsc_val']:+d} (Diag)"
+    elif res['shock_lsc_adj'] != 0: d_lsc_str = f"{res['shock_lsc_adj']:+d} (Cond)"
+
+    d1.metric("Rebound", f"{res['shock_reb']}", delta=d_reb_str)
+    d2.metric("Compression", f"{res['shock_lsc']}", delta=d_lsc_str)
     
     if res['shock_valve_mismatch']:
         st.warning(f"⚠️ **Shock Compensation Active**")
         st.caption(f"Valve: {res['shock_cts']} (Ideal: {res['shock_cts_ideal']})")
-        if res['shock_support_delta'] != 0:
-            action = "Opened" if res['shock_support_delta'] > 0 else "Closed"
-            st.caption(f"• LSC {action} to balance valve support.")
-    elif res['active_rate'] != res['mod_rate']:
-         st.info("ℹ️ **Compensation:** Damping adjusted for spring rate mismatch.")
 
 with c2:
     st.metric("Pressure", f"{res['fork_psi']:.1f} psi", delta=f"Active: {res['fork_neopos']} Neopos")
     
+    # [HARDWARE WARNING - FORK]
+    if res['hardware_msg'] and "CTS Valve" in res['hardware_msg']:
+        st.error(res['hardware_msg'])
+
     h1, h2 = st.columns(2)
     h1.metric("CTS Valve", res['fork_cts'])
     
     neo_label = f"{res['fork_neopos']}"
     if res['fork_neopos'] != res['neopos_rec']:
         neo_label += f" (Rec: {res['neopos_rec']})"
-        
     h2.metric("Neopos Count", neo_label, delta_color="off")
     
     d3, d4 = st.columns(2)
-    d3.metric("Rebound", f"{res['fork_reb']}", delta=f"{res['fork_reb_adj']:+d} (Winter)" if res['fork_reb_adj'] != 0 else None)
-    d4.metric("Compression", f"{res['fork_lsc']}", delta=f"{res['fork_lsc_adj']:+d} (Cond)" if res['fork_lsc_adj'] != 0 else None)
+    
+    # Custom Delta String for Fork
+    f_reb_str = None
+    if res['diag_fork_reb_val'] != 0: f_reb_str = f"{res['diag_fork_reb_val']:+d} (Diag)"
+    elif res['fork_reb_adj'] != 0: f_reb_str = f"{res['fork_reb_adj']:+d} (Winter)"
+
+    f_lsc_str = None
+    if res['diag_fork_lsc_val'] != 0: f_lsc_str = f"{res['diag_fork_lsc_val']:+d} (Diag)"
+    elif res['fork_lsc_adj'] != 0: f_lsc_str = f"{res['fork_lsc_adj']:+d} (Cond)"
+
+    d3.metric("Rebound", f"{res['fork_reb']}", delta=f_reb_str)
+    d4.metric("Compression", f"{res['fork_lsc']}", delta=f_lsc_str)
     
     if res['fork_valve_mismatch']:
         st.warning(f"⚠️ **Valve Compensation Active**")
@@ -589,8 +713,12 @@ def generate_pdf(data):
     
     pdf.cell(200, 8, f"Rider: {rider_kg}kg | Bike: {bike_kg}kg", ln=True)
     pdf.cell(200, 8, f"Style: {style_key} | Temp: {temperature} | Cond: {trail_condition}", ln=True)
-    pdf.ln(5)
+    if problem_select != "None (Fresh Setup)":
+        pdf.set_text_color(200, 0, 0)
+        pdf.cell(200, 8, f"Diagnostic Fix: {problem_select}", ln=True)
+        pdf.set_text_color(0, 0, 0)
     
+    pdf.ln(5)
     pdf.set_font("Arial", 'B', 12); pdf.cell(200, 10, "Tires (Inflation Targets)", ln=True)
     pdf.set_font("Arial", size=10)
     pdf.cell(200, 8, f"Front: {data['tire_front']:.1f} psi", ln=True)
