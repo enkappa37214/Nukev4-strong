@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from fpdf import FPDF
 import locale
-import streamlit.components.v1 as components # [FIX] Added for JS Scroll
+import streamlit.components.v1 as components 
 
 # Set locale for consistent number formatting
 try:
@@ -11,11 +11,11 @@ except locale.Error:
     locale.setlocale(locale.LC_ALL, 'C')
 
 # ==========================================================
-# 1. CONFIGURATION & CONSTANTS (MOVED TO TOP)
+# 1. CONFIGURATION & CONSTANTS
 # ==========================================================
 st.set_page_config(page_title="Nukeproof Mega v4 - Formula Expert", page_icon="⚡", layout="centered")
 
-# [FIX] Force Scroll to Top on Refresh (Mobile Fix)
+# Force Scroll to Top on Refresh
 components.html(
     """
     <script>
@@ -40,9 +40,8 @@ CONFIG = {
     "REBOUND_CLICKS_FORK": 19,    
 }
 
-# --- DATA DICTIONARIES (Moved here to prevent NameError) ---
+# --- DATA DICTIONARIES ---
 
-# RIDING STYLES
 STYLES = {
     "Flow / Park":       {"sag": 30.0, "bias": 63, "lsc_offset": -3, "desc": "Max Support. Forward bias."},
     "Dynamic":           {"sag": 31.0, "bias": 65, "lsc_offset": 0, "desc": "Balanced Enduro bias."},
@@ -52,7 +51,6 @@ STYLES = {
     "Plush":             {"sag": 35.0, "bias": 65, "lsc_offset": 4, "desc": "Comfort max."}
 }
 
-# FORK VALVE SPECS
 FORK_VALVE_SPECS = {
     "Purple": {"support": 2, "ramp": 2}, 
     "Blue":   {"support": 3, "ramp": 7}, 
@@ -63,14 +61,12 @@ FORK_VALVE_SPECS = {
     "Red":    {"support": 6, "ramp": 7}, 
 }
 
-# SHOCK VALVE SPECS
 SHOCK_VALVE_SPECS = {
     "Gold":   {"support": 3, "ramp": 3},
     "Orange": {"support": 5, "ramp": 5},
     "Green":  {"support": 8, "ramp": 8},
 }
 
-# TIRE SPECS
 TIRE_CASINGS = {
     "Standard (EXO/SnakeSkin)": 0.0,
     "Reinforced (DD/SuperGravity)": -1.0,
@@ -261,7 +257,10 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
 
     # Shock Damping
     reb_clicks = 7 - int((active_rate - 450) / 50)
-    if weather == "Cold (<5°C)": reb_clicks += 3
+    
+    # [FIXED] Winter Rebound Strategy: +5 Clicks
+    if weather == "Cold (<5°C)": reb_clicks += 5
+    
     reb_clicks = max(1, min(CONFIG["REBOUND_CLICKS_SHOCK"], reb_clicks))
     
     # Compression Logic
@@ -278,7 +277,7 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     
     if final_sag_pct > 32.0 and not is_recovery: base_lsc -= 1
     if weather == "Rain / Wet": base_lsc += 2
-    if weather == "Cold (<5°C)": base_lsc += 3 # [NEW] Winter LSC Compensation (+3 Clicks Softer)
+    if weather == "Cold (<5°C)": base_lsc += 3 # Winter Shock LSC
     if is_recovery: base_lsc = 17 
         
     lsc_clicks = max(1, min(CONFIG["COMP_CLICKS_SHOCK"], base_lsc))
@@ -304,7 +303,10 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
         final_psi = final_psi * 1.05
     
     fork_reb = 10 - int((final_psi - 70) / 10)
-    if weather == "Cold (<5°C)": fork_reb += 3
+    
+    # [FIXED] Winter Fork Rebound Strategy: +5 Clicks
+    if weather == "Cold (<5°C)": fork_reb += 5
+    
     fork_reb = max(2, min(CONFIG["REBOUND_CLICKS_FORK"], fork_reb))
     
     lsc_valve_offset = int(fork_support_delta * 1.5)
@@ -323,6 +325,9 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     fork_lsc += lsc_neopos_offset + lsc_valve_offset
     
     if weather == "Rain / Wet": fork_lsc = 12
+    # [FIXED] Winter Fork LSC Strategy: +2 Clicks
+    if weather == "Cold (<5°C)": fork_lsc += 2 
+    
     fork_lsc = max(0, min(12, fork_lsc))
 
     # --- 5. TIRE PRESSURE CALCULATIONS ---
