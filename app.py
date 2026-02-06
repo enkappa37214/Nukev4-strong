@@ -88,7 +88,9 @@ DEFAULTS = {
     "bike_kg": 15.1,
     "unsprung_kg": 4.27,
     "is_rec": False,
-    "weather": "Standard",
+    # [UPDATED] Split Weather into Temp and Condition
+    "temperature": "Standard (>10°C)",
+    "trail_condition": "Dry",
     "altitude": 500,
     "style_select": "Trail",
     "sag_slider": 33.0,
@@ -186,7 +188,7 @@ def get_neopos_count(weight, style, is_recovery):
     if weight < 65: val = 0
     return max(0, min(3, val))
 
-def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_manual, altitude, weather, is_recovery, neopos_select, spring_override, fork_valve_override, shock_valve_override, tire_casing_front, tire_casing_rear, tire_width, tire_insert, is_tubeless):
+def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_manual, altitude, temperature, trail_condition, is_recovery, neopos_select, spring_override, fork_valve_override, shock_valve_override, tire_casing_front, tire_casing_rear, tire_width, tire_insert, is_tubeless):
     s_data = STYLES[style_key]
     
     # --- 1. CONFIGURATION ---
@@ -255,29 +257,59 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
         
     sag_actual_pct = final_sag_pct * (ideal_rate_exact / active_rate)
 
-    # Shock Damping
+    # --- ADVANCED WEATHER LOGIC ---
+    # Init Adjustments
+    reb_adj_shock = 0
+    lsc_adj_shock = 0
+    reb_adj_fork = 0
+    lsc_adj_fork = 0
+    fork_psi_mult = 1.0
+    tire_psi_adj = 0.0
+
+    # 1. Temperature Logic (Viscosity & Density)
+    if temperature == "Cool (0-10°C)":
+        reb_adj_shock += 2
+        lsc_adj_shock += 1
+        reb_adj_fork += 2
+        lsc_adj_fork += 1
+        fork_psi_mult = 1.02 # approx 2%
+    elif temperature == "Freezing (<0°C)":
+        reb_adj_shock += 5
+        lsc_adj_shock += 3
+        reb_adj_fork += 5
+        lsc_adj_fork += 2
+        fork_psi_mult = 1.05 # approx 5%
+
+    # 2. Condition Logic (Traction / Compliance)
+    if trail_condition == "Wet":
+        lsc_adj_shock += 1 # Softer for grip
+        lsc_adj_fork += 1  # Softer for grip
+        tire_psi_adj -= 1.0
+    elif trail_condition == "Mud":
+        lsc_adj_shock += 2 # Max grip
+        lsc_adj_fork += 2  # Max grip
+        tire_psi_adj -= 2.0
+
+    # --- SHOCK DAMPING APPLY ---
     reb_clicks = 7 - int((active_rate - 450) / 50)
-    
-    # [FIXED] Winter Rebound Strategy: +5 Clicks
-    if weather == "Cold (<5°C)": reb_clicks += 5
-    
+    reb_clicks += reb_adj_shock # Apply Temp Adj
     reb_clicks = max(1, min(CONFIG["REBOUND_CLICKS_SHOCK"], reb_clicks))
     
-    # Compression Logic
+    # Compression
     lsc_spring_comp = int(rate_mismatch / 25) 
     
     neopos_delta = neopos_installed - neopos_rec
     lsc_chassis_bal = 0
     if neopos_delta < 0: lsc_chassis_bal = -abs(neopos_delta)
     
-    # Valve Compensation
     lsc_shock_valve_offset = int(shock_support_delta * 1.5)
 
     base_lsc = 9 + s_data["lsc_offset"] + lsc_spring_comp + lsc_chassis_bal + lsc_shock_valve_offset
     
     if final_sag_pct > 32.0 and not is_recovery: base_lsc -= 1
-    if weather == "Rain / Wet": base_lsc += 2
-    if weather == "Cold (<5°C)": base_lsc += 3 # Winter Shock LSC
+    
+    base_lsc += lsc_adj_shock # Apply Temp + Cond Adj
+    
     if is_recovery: base_lsc = 17 
         
     lsc_clicks = max(1, min(CONFIG["COMP_CLICKS_SHOCK"], base_lsc))
@@ -299,14 +331,11 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     psi_correction_factor = 1.0 - (fork_support_delta * 0.03)
     final_psi = raw_psi * psi_correction_factor
 
-    if weather == "Cold (<5°C)":
-        final_psi = final_psi * 1.05
+    # Apply Temp Multiplier
+    final_psi = final_psi * fork_psi_mult
     
     fork_reb = 10 - int((final_psi - 70) / 10)
-    
-    # [FIXED] Winter Fork Rebound Strategy: +5 Clicks
-    if weather == "Cold (<5°C)": fork_reb += 5
-    
+    fork_reb += reb_adj_fork # Apply Temp Adj
     fork_reb = max(2, min(CONFIG["REBOUND_CLICKS_FORK"], fork_reb))
     
     lsc_valve_offset = int(fork_support_delta * 1.5)
@@ -323,10 +352,7 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     if fork_valve_ideal == "Bronze": fork_lsc = 8
     
     fork_lsc += lsc_neopos_offset + lsc_valve_offset
-    
-    if weather == "Rain / Wet": fork_lsc = 12
-    # [FIXED] Winter Fork LSC Strategy: +2 Clicks
-    if weather == "Cold (<5°C)": fork_lsc += 2 
+    fork_lsc += lsc_adj_fork # Apply Temp + Cond Adj
     
     fork_lsc = max(0, min(12, fork_lsc))
 
@@ -359,11 +385,10 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
         base_f -= 1.0; base_r -= 1.0
     elif style_key == "Alpine Epic":
         base_f += 1.0; base_r += 1.0
-        
-    if weather == "Rain / Wet":
-        base_f -= 2.0; base_r -= 2.0
-    elif weather == "Cold (<5°C)":
-        base_f -= 1.0; base_r -= 1.0
+    
+    # Apply Condition PSI Adj
+    base_f += tire_psi_adj
+    base_r += tire_psi_adj
         
     final_f_psi = max(18.0, min(35.0, base_f))
     final_r_psi = max(18.0, min(35.0, base_r))
@@ -419,8 +444,15 @@ with col_rec:
     st.write("") 
     is_rec = st.toggle("Recovery Mode", help="Max softness + Anti-Dive safety.", key="is_rec", on_change=update_rec_logic)
 with col_env1:
-    weather = st.selectbox("Weather", ["Standard", "Cold (<5°C)", "Rain / Wet"], key="weather")
+    # [UPDATED] Replaced single Weather with Temp + Condition
+    temperature = st.selectbox("Temperature", ["Standard (>10°C)", "Cool (0-10°C)", "Freezing (<0°C)"], key="temperature")
+    
 with col_env2:
+    trail_condition = st.selectbox("Trail Condition", ["Dry", "Wet", "Mud"], key="trail_condition")
+
+# Altitude Row
+col_alt, col_dummy = st.columns([0.5, 0.5])
+with col_alt:
     altitude = st.number_input("Max Altitude (m)", 0, 3000, step=50, key="altitude")
 
 st.markdown("---")
@@ -513,7 +545,7 @@ with c2:
         )
 
 # --- RUN CALCULATION ---
-res = calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, target_sag, target_bias, altitude, weather, is_rec, neopos_select, spring_override, fork_valve_select, shock_valve_select, tire_casing_front, tire_casing_rear, tire_width, tire_insert, is_tubeless)
+res = calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, target_sag, target_bias, altitude, temperature, trail_condition, is_rec, neopos_select, spring_override, fork_valve_select, shock_valve_select, tire_casing_front, tire_casing_rear, tire_width, tire_insert, is_tubeless)
 
 # --- DISPLAY RESULTS ---
 st.markdown("### 🛞 Tire Pressure")
@@ -576,7 +608,7 @@ def generate_pdf(data):
     pdf.set_font("Arial", size=11); pdf.ln(10)
     
     pdf.cell(200, 8, f"Rider: {rider_kg}kg | Bike: {bike_kg}kg", ln=True)
-    pdf.cell(200, 8, f"Style: {style_key} | Weather: {weather}", ln=True)
+    pdf.cell(200, 8, f"Style: {style_key} | Temp: {temperature} | Cond: {trail_condition}", ln=True)
     pdf.ln(5)
     
     pdf.set_font("Arial", 'B', 12); pdf.cell(200, 10, "Tires", ln=True)
