@@ -88,7 +88,6 @@ DEFAULTS = {
     "bike_kg": 15.1,
     "unsprung_kg": 4.27,
     "is_rec": False,
-    # [UPDATED] Split Weather into Temp and Condition
     "temperature": "Standard (>10°C)",
     "trail_condition": "Dry",
     "altitude": 500,
@@ -289,6 +288,10 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
         lsc_adj_shock += 2 # Max grip
         lsc_adj_fork += 2  # Max grip
         tire_psi_adj -= 2.0
+    
+    # [NEW] Frozen Compound Logic
+    if temperature == "Freezing (<0°C)" and trail_condition == "Dry":
+        tire_psi_adj -= 1.0 # Compensate for hard rubber
 
     # --- SHOCK DAMPING APPLY ---
     reb_clicks = 7 - int((active_rate - 450) / 50)
@@ -389,9 +392,10 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     # Apply Condition PSI Adj
     base_f += tire_psi_adj
     base_r += tire_psi_adj
-        
-    final_f_psi = max(18.0, min(35.0, base_f))
-    final_r_psi = max(18.0, min(35.0, base_r))
+    
+    # [NEW] Apply Temp Multiplier (Indoor Inflation Protocol)
+    final_f_psi = max(18.0, min(35.0, base_f)) * fork_psi_mult
+    final_r_psi = max(18.0, min(35.0, base_r)) * fork_psi_mult
     
     return {
         "mod_rate": ideal_rate_exact,
@@ -444,7 +448,6 @@ with col_rec:
     st.write("") 
     is_rec = st.toggle("Recovery Mode", help="Max softness + Anti-Dive safety.", key="is_rec", on_change=update_rec_logic)
 with col_env1:
-    # [UPDATED] Replaced single Weather with Temp + Condition
     temperature = st.selectbox("Temperature", ["Standard (>10°C)", "Cool (0-10°C)", "Freezing (<0°C)"], key="temperature")
     
 with col_env2:
@@ -550,8 +553,12 @@ res = calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, target_sag, tar
 # --- DISPLAY RESULTS ---
 st.markdown("### 🛞 Tire Pressure")
 tp1, tp2 = st.columns(2)
-tp1.metric("Front Tire", f"{res['tire_front']:.1f} psi")
-tp2.metric("Rear Tire", f"{res['tire_rear']:.1f} psi")
+tp1.metric("Front Tire (Indoor)", f"{res['tire_front']:.1f} psi")
+tp2.metric("Rear Tire (Indoor)", f"{res['tire_rear']:.1f} psi")
+
+if temperature != "Standard (>10°C)":
+    st.info(f"**ℹ️ Winter Protocol:** Inflate tires to these pressures **Indoors**. They will drop ~{int((res['tire_front']*(1-(1/1.05))) if 'Freezing' in temperature else (res['tire_front']*(1-(1/1.02))))} PSI when exposed to outdoor cold.")
+
 st.markdown("---")
 
 with c1:
@@ -611,7 +618,7 @@ def generate_pdf(data):
     pdf.cell(200, 8, f"Style: {style_key} | Temp: {temperature} | Cond: {trail_condition}", ln=True)
     pdf.ln(5)
     
-    pdf.set_font("Arial", 'B', 12); pdf.cell(200, 10, "Tires", ln=True)
+    pdf.set_font("Arial", 'B', 12); pdf.cell(200, 10, "Tires (Inflation Targets)", ln=True)
     pdf.set_font("Arial", size=10)
     pdf.cell(200, 8, f"Front: {data['tire_front']:.1f} psi", ln=True)
     pdf.cell(200, 8, f"Rear: {data['tire_rear']:.1f} psi", ln=True)
