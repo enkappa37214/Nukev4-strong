@@ -432,25 +432,38 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     fork_lsc += lsc_adj_fork + diag_fork_lsc
     fork_lsc = max(0, min(12, fork_lsc))
 
-    # Tires
-    weight_offset = (rider_kg - 75.0) / 5.0
-    base_f = 23.0 + weight_offset
-    base_r = 26.0 + weight_offset
     
+        # --- TIRES (REFINED WITH MASS BIAS) ---
+    weight_offset = (rider_kg - 75.0) / 5.0
+    
+    # Neutral bias is 65%. 
+    # For every 1% increase in rear bias, add 0.2 psi to rear and subtract 0.2 psi from front.
+    bias_shift = (effective_bias_pct - 65.0) * 0.2
+    
+    base_f = 23.0 + weight_offset - bias_shift
+    base_r = 26.0 + weight_offset + bias_shift
+    
+    # Apply Casing Modifications
     casing_mod_f = TIRE_CASINGS.get(tire_casing_front, 0.0)
     base_f += casing_mod_f
     casing_mod_r = TIRE_CASINGS.get(tire_casing_rear, 0.0)
     base_r += casing_mod_r
     
+    # Apply Width and Insert Modifications
     width_mod = TIRE_WIDTHS.get(tire_width, 0.0)
-    base_f += width_mod; base_r += width_mod
+    base_f += width_mod
+    base_r += width_mod
     
-    insert_mod = TIRE_INSERTS.get(tire_insert, {"f":0.0, "r":0.0})
-    base_f += insert_mod["f"]; base_r += insert_mod["r"]
+    insert_mod = TIRE_INSERTS.get(tire_insert, {"f": 0.0, "r": 0.0})
+    base_f += insert_mod["f"]
+    base_r += insert_mod["r"]
     
+    # Tube Correction
     if not is_tubeless:
-        base_f += 4.0; base_r += 4.0
+        base_f += 4.0
+        base_r += 4.0
         
+    # Style Specific Tweaks
     if style_key == "Flow / Park":
         base_f += 2.0; base_r += 2.0
     elif style_key == "Steep / Tech":
@@ -458,12 +471,14 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     elif style_key == "Alpine Epic":
         base_f += 1.0; base_r += 1.0
     
+    # Environmental Adjustment
     base_f += tire_psi_adj
     base_r += tire_psi_adj
     
+    # Clamping and Final Calculation
     final_f_psi = max(18.0, min(35.0, base_f)) * fork_psi_mult
     final_r_psi = max(18.0, min(35.0, base_r)) * fork_psi_mult
-    
+
     # Calculate Total Adjustment Values for Visualization
     shock_reb_total_adj = reb_adj_shock + diag_shock_reb
     shock_lsc_total_adj = lsc_adj_shock + diag_shock_lsc
