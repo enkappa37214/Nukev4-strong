@@ -371,9 +371,15 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
             diag_shock_reb -= 2
             diag_fork_reb += 1
         # Hardware Flags
-        elif action in ["softer_fork_valve", "increase_spring", "check_preload"]:
+        if action == "increase_spring_dynamic":
+            # Calculate 5% of ideal rate, rounded to nearest 5 lbs for Sprindex
+            adjustment = round((ideal_rate_exact * val) / 5) * 5
+            adjustment = max(10, adjustment) 
+            hardware_msg = f"⚠️ **Hardware Limit:** Increase Sprindex by **{adjustment} lbs** to stop harsh bottom-out."
+        elif action in ["softer_fork_valve", "check_preload"]:
             hardware_msg = diag_msg
 
+        
     # --- FINAL DAMPING APPLY ---
     # Shock Rebound
     reb_clicks = 7 - int((active_rate - 450) / 50)
