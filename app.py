@@ -113,11 +113,11 @@ DIAGNOSTIC_PROBLEMS = {
         "value": -2,
         "msg": "Slowed Shock Rebound (-2) to control return energy."
     },
-    "Rear: Harsh Bottom Out": { 
+        "Rear: Harsh Bottom Out": { 
         "diagnosis": "Spring rate insufficient for hit size.",
-        "action": "increase_spring", 
-        "value": 25,
-        "msg": "⚠️ **Hardware Limit:** Hydraulics overwhelmed. Increase Spring Rate by ~25 lbs."
+        "action": "increase_spring_dynamic", 
+        "value": 0.05, # Represents a 5% increase
+        "msg": "⚠️ **Hardware Limit:** Hydraulics overwhelmed. Increase Sprindex by 15-25 lbs based on current feel."
     },
     "Rear: Top-stroke harshness": { 
         "diagnosis": "Excessive preload fighting initial movement.",
