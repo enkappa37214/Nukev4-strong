@@ -40,6 +40,14 @@ CONFIG = {
     "REBOUND_CLICKS_FORK": 19,    
 }
 
+# --- KINEMATIC CONSTANTS (Mega v4 Specifics) ---
+KINEMATIC_MAP = {
+    "BASE_RING": 32,             # Optimized chainring size
+    "LSC_PER_TOOTH": 0.5,        # LSC Clicks per tooth delta
+    "KICKBACK_REB_OFFSET": 2,    # Clicks to open Rebound (Faster)
+    "GEO_CORRECTION_LSC": -1     # Clicks to soften Fork LSC
+}
+
 # --- DATA DICTIONARIES ---
 
 STYLES = {
@@ -147,6 +155,7 @@ DEFAULTS = {
     "bike_kg": 15.1,
     "unsprung_kg": 4.27,
     "is_rec": False,
+    "chainring_size": 32,
     "temperature": "Standard (>10°C)",
     "trail_condition": "Dry",
     "altitude": 500,
@@ -248,7 +257,7 @@ def get_neopos_count(weight, style, is_recovery):
     if weight < 65: val = 0
     return max(0, min(3, val))
 
-def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_manual, altitude, temperature, trail_condition, is_recovery, neopos_select, spring_override, fork_valve_override, shock_valve_override, tire_casing_front, tire_casing_rear, tire_width, tire_insert, is_tubeless, problem_select):
+def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_manual, altitude, temperature, trail_condition, is_recovery, chainring_size, neopos_select, spring_override, fork_valve_override, shock_valve_override, tire_casing_front, tire_casing_rear, tire_width, tire_insert, is_tubeless, problem_select):
     s_data = STYLES[style_key]
     
     # --- 1. CONFIGURATION ---
@@ -379,11 +388,46 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
         elif action in ["softer_fork_valve", "check_preload"]:
             hardware_msg = diag_msg
 
+    # --- KINEMATIC LOGIC LAYER (NEW) ---
+    kinematic_notes = []
+
+    # 1. CHAINRING & ANTI-SQUAT (Rear Support)
+    # Physics: Larger ring = Less Anti-Squat = Needs more LSC
+    ring_delta = chainring_size - KINEMATIC_MAP["BASE_RING"]
+    # Physics: Deeper sag = Less Anti-Squat = Needs more LSC
+    sag_depth_delta = max(0, final_sag_pct - 30.0)
+    
+    as_lsc_comp = (ring_delta * KINEMATIC_MAP["LSC_PER_TOOTH"]) + (sag_depth_delta * 0.2)
+    
+    if is_recovery:
+        as_lsc_comp *= 0.5 # Relax support in recovery
         
+    as_lsc_comp_int = int(round(as_lsc_comp))
+    if as_lsc_comp_int != 0:
+        kinematic_notes.append(f"Anti-Squat ({as_lsc_comp_int:+} LSC)")
+
+    # 2. DYNAMIC GEOMETRY (Chassis Pitch)
+    # Physics: Deep rear + Stiff front = Chopper (Understeer). Soften front to level chassis.
+    pitch_imbalance = 0
+    if final_sag_pct >= 34.0 and fork_valve_active in ["Green", "Orange", "Gold"]:
+        pitch_imbalance = KINEMATIC_MAP["GEO_CORRECTION_LSC"]
+        if not is_recovery:
+             kinematic_notes.append("Geo Correction (-Fork LSC)")
+
+    # 3. KICKBACK & CHAIN GROWTH (Return Speed)
+    # Physics: High chain tension fights return. Speed up rebound to compensate.
+    kickback_reb_mod = 0
+    if style_key in ["Steep / Tech", "Plush"] or is_recovery:
+        kickback_reb_mod = KINEMATIC_MAP["KICKBACK_REB_OFFSET"]
+        if is_recovery: kickback_reb_mod += 1
+        kinematic_notes.append(f"Kickback Mgmt (+{kickback_reb_mod} Reb)")
+
     # --- FINAL DAMPING APPLY ---
     # Shock Rebound
     reb_clicks = 7 - int((active_rate - 450) / 50)
     reb_clicks += reb_adj_shock + diag_shock_reb
+    # Apply Kinematics
+    reb_clicks += kickback_reb_mod
     reb_clicks = max(1, min(CONFIG["REBOUND_CLICKS_SHOCK"], reb_clicks))
     
     # Shock Compression
@@ -397,6 +441,9 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     if final_sag_pct > 32.0 and not is_recovery: base_lsc -= 1
     
     base_lsc += lsc_adj_shock + diag_shock_lsc
+    # Apply Kinematics
+    base_lsc += as_lsc_comp_int
+    
     if is_recovery: base_lsc = 17 
     lsc_clicks = max(1, min(CONFIG["COMP_CLICKS_SHOCK"], base_lsc))
 
@@ -436,6 +483,8 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     
     fork_lsc += lsc_neopos_offset + lsc_valve_offset
     fork_lsc += lsc_adj_fork + diag_fork_lsc
+    # Apply Kinematics
+    fork_lsc += pitch_imbalance
     fork_lsc = max(0, min(12, fork_lsc))
 
     
@@ -522,7 +571,8 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
         "diag_shock_reb_val": diag_shock_reb,
         "diag_shock_lsc_val": diag_shock_lsc,
         "diag_fork_reb_val": diag_fork_reb,
-        "diag_fork_lsc_val": diag_fork_lsc
+        "diag_fork_lsc_val": diag_fork_lsc,
+        "kinematic_notes": kinematic_notes
     }
 
 # ==========================================================
@@ -555,10 +605,13 @@ with col_env1:
     temperature = st.selectbox("Temperature", ["Standard (>10°C)", "Cool (0-10°C)", "Freezing (<0°C)"], key="temperature")
     
 with col_env2:
-    trail_condition = st.selectbox("Trail Condition", ["Dry", "Wet", "Mud"], key="trail_condition")
+    # [NEW] Chainring Selector
+    chainring_size = st.selectbox("Chainring Size", [30, 32, 34, 36], index=1, key="chainring_size", help="Affects Anti-Squat. 30T=Crisp, 34T=Plush.")
 
 col_alt, col_dummy = st.columns([0.5, 0.5])
 with col_alt:
+    trail_condition = st.selectbox("Trail Condition", ["Dry", "Wet", "Mud"], key="trail_condition")
+with col_dummy:
     altitude = st.number_input("Max Altitude (m)", 0, 3000, step=50, key="altitude")
 
 st.markdown("---")
@@ -638,8 +691,8 @@ with c2:
         neopos_select = st.select_slider("Neopos (Installed)", options=["Auto", "0", "1", "2", "3"], help=f"Auto recommends: {rec_neopos_peek}.", key="neopos_override")
 
 # --- RUN CALCULATION ---
-# [FIXED] Updated function call to use correct variable names including problem_select
-res = calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, target_sag, target_bias, altitude, temperature, trail_condition, is_rec, neopos_select, spring_override, fork_valve_select, shock_valve_select, tire_casing_front, tire_casing_rear, tire_width, tire_insert, is_tubeless, problem_select)
+# [FIXED] Updated function call to use correct variable names including problem_select AND chainring_size
+res = calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, target_sag, target_bias, altitude, temperature, trail_condition, is_rec, chainring_size, neopos_select, spring_override, fork_valve_override, shock_valve_override, tire_casing_front, tire_casing_rear, tire_width, tire_insert, is_tubeless, problem_select)
 
 # --- DISPLAY RESULTS ---
 st.markdown("### 🛞 Tire Pressure")
@@ -676,12 +729,16 @@ with c1:
     if res['diag_shock_reb_val'] != 0: d_reb_str = f"{res['diag_shock_reb_val']:+d} (Diag)"
     elif res['shock_reb_adj'] != 0: d_reb_str = f"{res['shock_reb_adj']:+d} (Winter)"
 
-    d_lsc_str = None
-    if res['diag_shock_lsc_val'] != 0: d_lsc_str = f"{res['diag_shock_lsc_val']:+d} (Diag)"
-    elif res['shock_lsc_adj'] != 0: d_lsc_str = f"{res['shock_lsc_adj']:+d} (Cond)"
+    # Build Compression string with Kinematics
+    d_lsc_str = []
+    if res['diag_shock_lsc_val'] != 0: d_lsc_str.append(f"{res['diag_shock_lsc_val']:+d} (Diag)")
+    if res['shock_lsc_adj'] != 0: d_lsc_str.append(f"{res['shock_lsc_adj']:+d} (Cond)")
+    if res['kinematic_notes']: 
+        for note in res['kinematic_notes']:
+            if "Anti-Squat" in note: d_lsc_str.append(note)
 
     d1.metric("Rebound", f"{res['shock_reb']}", delta=d_reb_str)
-    d2.metric("Compression", f"{res['shock_lsc']}", delta=d_lsc_str)
+    d2.metric("Compression", f"{res['shock_lsc']}", delta=", ".join(d_lsc_str) if d_lsc_str else None)
     
     if res['shock_valve_mismatch']:
         st.warning(f"⚠️ **Shock Compensation Active**")
@@ -709,12 +766,15 @@ with c2:
     if res['diag_fork_reb_val'] != 0: f_reb_str = f"{res['diag_fork_reb_val']:+d} (Diag)"
     elif res['fork_reb_adj'] != 0: f_reb_str = f"{res['fork_reb_adj']:+d} (Winter)"
 
-    f_lsc_str = None
-    if res['diag_fork_lsc_val'] != 0: f_lsc_str = f"{res['diag_fork_lsc_val']:+d} (Diag)"
-    elif res['fork_lsc_adj'] != 0: f_lsc_str = f"{res['fork_lsc_adj']:+d} (Cond)"
+    f_lsc_str = []
+    if res['diag_fork_lsc_val'] != 0: f_lsc_str.append(f"{res['diag_fork_lsc_val']:+d} (Diag)")
+    if res['fork_lsc_adj'] != 0: f_lsc_str.append(f"{res['fork_lsc_adj']:+d} (Cond)")
+    if res['kinematic_notes']: 
+        for note in res['kinematic_notes']:
+            if "Geo" in note: f_lsc_str.append(note)
 
     d3.metric("Rebound", f"{res['fork_reb']}", delta=f_reb_str)
-    d4.metric("Compression", f"{res['fork_lsc']}", delta=f_lsc_str)
+    d4.metric("Compression", f"{res['fork_lsc']}", delta=", ".join(f_lsc_str) if f_lsc_str else None)
     
     if res['fork_valve_mismatch']:
         st.warning(f"⚠️ **Valve Compensation Active**")
