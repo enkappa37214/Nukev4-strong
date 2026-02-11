@@ -605,7 +605,6 @@ with col_env1:
     temperature = st.selectbox("Temperature", ["Standard (>10°C)", "Cool (0-10°C)", "Freezing (<0°C)"], key="temperature")
     
 with col_env2:
-    # [NEW] Chainring Selector
     chainring_size = st.selectbox("Chainring Size", [30, 32, 34, 36], index=1, key="chainring_size", help="Affects Anti-Squat. 30T=Crisp, 34T=Plush.")
 
 col_alt, col_dummy = st.columns([0.5, 0.5])
