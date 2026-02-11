@@ -13,7 +13,7 @@ except locale.Error:
 # ==========================================================
 # 1. CONFIGURATION & CONSTANTS
 # ==========================================================
-st.set_page_config(page_title="Nukeproof Mega v4 - Formula Expert", page_icon="⚡", layout="centered")
+st.set_page_config(page_title="Nukeproof Mega v4 (L) - Formula Expert", page_icon="⚡", layout="centered")
 
 # Force Scroll to Top on Refresh
 components.html(
@@ -45,7 +45,8 @@ KINEMATIC_MAP = {
     "BASE_RING": 32,             # Optimized chainring size
     "LSC_PER_TOOTH": 0.5,        # LSC Clicks per tooth delta
     "KICKBACK_REB_OFFSET": 2,    # Clicks to open Rebound (Faster)
-    "GEO_CORRECTION_LSC": -1     # Clicks to soften Fork LSC
+    "GEO_CORRECTION_LSC": -1,    # Clicks to soften Fork LSC
+    "SIZE_L_REACH_CORRECTION": -1 # [NEW] Soften Fork LSC for 475mm Reach
 }
 
 # --- DATA DICTIONARIES ---
@@ -421,6 +422,11 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
         kickback_reb_mod = KINEMATIC_MAP["KICKBACK_REB_OFFSET"]
         if is_recovery: kickback_reb_mod += 1
         kinematic_notes.append(f"Kickback Mgmt (+{kickback_reb_mod} Reb)")
+    
+    # 4. SIZE LARGE REACH CORRECTION
+    # The 475mm Reach makes weighting the front harder. Soften LSC to help bite.
+    fork_reach_mod = KINEMATIC_MAP["SIZE_L_REACH_CORRECTION"]
+    kinematic_notes.append("Size L Reach (-1 Fork LSC)")
 
     # --- FINAL DAMPING APPLY ---
     # Shock Rebound
@@ -484,7 +490,7 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     fork_lsc += lsc_neopos_offset + lsc_valve_offset
     fork_lsc += lsc_adj_fork + diag_fork_lsc
     # Apply Kinematics
-    fork_lsc += pitch_imbalance
+    fork_lsc += pitch_imbalance + fork_reach_mod # Added reach correction
     fork_lsc = max(0, min(12, fork_lsc))
 
     
@@ -690,12 +696,13 @@ with c2:
         neopos_select = st.select_slider("Neopos (Installed)", options=["Auto", "0", "1", "2", "3"], help=f"Auto recommends: {rec_neopos_peek}.", key="neopos_override")
 
 # --- RUN CALCULATION ---
+# [FIXED] Using correct variable names from UI
 res = calculate_setup(
     rider_kg, bike_kg, unsprung_kg, style_key, target_sag, target_bias, 
     altitude, temperature, trail_condition, is_rec, chainring_size, 
     neopos_select, spring_override, 
-    fork_valve_select,
-    shock_valve_select,
+    fork_valve_select,   # Corrected from fork_valve_override
+    shock_valve_select,  # Corrected from shock_valve_override
     tire_casing_front, tire_casing_rear, tire_width, tire_insert, 
     is_tubeless, problem_select
 )
@@ -777,7 +784,8 @@ with c2:
     if res['fork_lsc_adj'] != 0: f_lsc_str.append(f"{res['fork_lsc_adj']:+d} (Cond)")
     if res['kinematic_notes']: 
         for note in res['kinematic_notes']:
-            if "Geo" in note: f_lsc_str.append(note)
+            # Capture both standard Geo notes and Size L Reach notes
+            if "Geo" in note or "Reach" in note: f_lsc_str.append(note)
 
     d3.metric("Rebound", f"{res['fork_reb']}", delta=f_reb_str)
     d4.metric("Compression", f"{res['fork_lsc']}", delta=", ".join(f_lsc_str) if f_lsc_str else None)
@@ -835,4 +843,4 @@ if st.button("Export PDF Report"):
     except Exception as e:
         st.error(f"PDF Error: {e}")
 
-st.caption("Calculations valid for Nukeproof Mega v4 (2020-2026) + Formula Selva V 2025 + Formula Mod 2025")
+st.caption("Calculations valid for Nukeproof Mega v4 (Size L) + Formula Selva V 2025 + Formula Mod 2025")
