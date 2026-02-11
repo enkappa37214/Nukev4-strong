@@ -690,8 +690,16 @@ with c2:
         neopos_select = st.select_slider("Neopos (Installed)", options=["Auto", "0", "1", "2", "3"], help=f"Auto recommends: {rec_neopos_peek}.", key="neopos_override")
 
 # --- RUN CALCULATION ---
-# [FIXED] Updated function call to use correct variable names including problem_select AND chainring_size
-res = calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, target_sag, target_bias, altitude, temperature, trail_condition, is_rec, chainring_size, neopos_select, spring_override, fork_valve_override, shock_valve_override, tire_casing_front, tire_casing_rear, tire_width, tire_insert, is_tubeless, problem_select)
+# Corrected variable names in the function call
+res = calculate_setup(
+    rider_kg, bike_kg, unsprung_kg, style_key, target_sag, target_bias, 
+    altitude, temperature, trail_condition, is_rec, chainring_size, 
+    neopos_select, spring_override, 
+    fork_valve_select,   # Changed from fork_valve_override
+    shock_valve_select,  # Changed from shock_valve_override
+    tire_casing_front, tire_casing_rear, tire_width, tire_insert, 
+    is_tubeless, problem_select
+)
 
 # --- DISPLAY RESULTS ---
 st.markdown("### 🛞 Tire Pressure")
