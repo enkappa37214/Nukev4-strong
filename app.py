@@ -169,7 +169,7 @@ DEFAULTS = {
     "sag_slider": 33.0,
     "bias_slider": 65,
     "spring_override": "Auto",
-    "neopos_override": "Auto",
+    "neopos_override": "0",
     "valve_override": "Auto",
     "shock_valve_override": "Auto",
     "tire_casing_front": "Reinforced (DD/SuperGravity)",
