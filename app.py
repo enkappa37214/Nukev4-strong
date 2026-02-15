@@ -152,7 +152,7 @@ DIAGNOSTIC_PROBLEMS = {
 
 # --- STATE MANAGEMENT ---
 DEFAULTS = {
-    "rider_kg": 72.0,
+    "rider_kg": 70.0,
     "bike_kg": 16.5,
     "unsprung_kg": 5.5,
     "is_rec": False,
