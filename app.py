@@ -168,7 +168,7 @@ DEFAULTS = {
     "previous_style": "Trail",
     "sag_slider": 33.0,
     "bias_slider": 65,
-    "spring_override": "Auto",
+    "spring_override": "390",
     "neopos_override": "0",
     "valve_override": "Auto",
     "shock_valve_override": "Auto",
