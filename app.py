@@ -150,7 +150,11 @@ DIAGNOSTIC_PROBLEMS = {
     }
 }
 
-# --- STATE MANAGEMENT ---
+# ==========================================================
+# STATE MANAGEMENT (PERSISTENT)
+# ==========================================================
+
+# 1. Define Defaults
 DEFAULTS = {
     "rider_kg": 70.0,
     "bike_kg": 16.5,
@@ -176,14 +180,73 @@ DEFAULTS = {
     "problem_select": "None (Fresh Setup)"
 }
 
-# --- CALLBACKS ---
-def reset_form_callback():
-    st.session_state.clear() 
+# 2. Type Converters (URL strings -> Python Types)
+def safe_float(val, default):
+    try: return float(val)
+    except (ValueError, TypeError): return default
 
+def safe_int(val, default):
+    try: return int(val)
+    except (ValueError, TypeError): return default
+
+def safe_bool(val, default):
+    if isinstance(val, str):
+        return val.lower() == "true"
+    return bool(val) if val is not None else default
+
+# 3. The "Load Game" Function
 def initialize_state():
-    for key, value in DEFAULTS.items():
+    # A. Check URL for saved data
+    query_params = st.query_params
+    
+    # B. Load each key: URL Priority -> Default Fallback
+    # Floats
+    if "rider_kg" not in st.session_state:
+        st.session_state.rider_kg = safe_float(query_params.get("rider_kg"), DEFAULTS["rider_kg"])
+    if "bike_kg" not in st.session_state:
+        st.session_state.bike_kg = safe_float(query_params.get("bike_kg"), DEFAULTS["bike_kg"])
+    if "unsprung_kg" not in st.session_state:
+        st.session_state.unsprung_kg = safe_float(query_params.get("unsprung_kg"), DEFAULTS["unsprung_kg"])
+    if "sag_slider" not in st.session_state:
+        st.session_state.sag_slider = safe_float(query_params.get("sag_slider"), DEFAULTS["sag_slider"])
+        
+    # Integers
+    if "chainring_size" not in st.session_state:
+        st.session_state.chainring_size = safe_int(query_params.get("chainring_size"), DEFAULTS["chainring_size"])
+    if "altitude" not in st.session_state:
+        st.session_state.altitude = safe_int(query_params.get("altitude"), DEFAULTS["altitude"])
+    if "bias_slider" not in st.session_state:
+        st.session_state.bias_slider = safe_int(query_params.get("bias_slider"), DEFAULTS["bias_slider"])
+
+    # Booleans
+    if "is_rec" not in st.session_state:
+        st.session_state.is_rec = safe_bool(query_params.get("is_rec"), DEFAULTS["is_rec"])
+    if "is_tubeless" not in st.session_state:
+        st.session_state.is_tubeless = safe_bool(query_params.get("is_tubeless"), DEFAULTS["is_tubeless"])
+
+    # Strings (Direct Load)
+    text_keys = [
+        "temperature", "trail_condition", "style_select", "previous_style",
+        "spring_override", "neopos_override", "valve_override", "shock_valve_override",
+        "tire_casing_front", "tire_casing_rear", "tire_width", "tire_insert", "problem_select"
+    ]
+    for key in text_keys:
         if key not in st.session_state:
-            st.session_state[key] = value
+            val = query_params.get(key, DEFAULTS[key])
+            st.session_state[key] = val
+
+# 4. The "Save" Function (Run this on every interaction)
+def sync_to_url():
+    # Update URL with current Session State
+    params = {}
+    for key in DEFAULTS.keys():
+        if key in st.session_state:
+            params[key] = st.session_state[key]
+    st.query_params.update(params)
+
+def reset_form_callback():
+    st.query_params.clear()
+    st.session_state.clear()
 
 def update_style_logic():
     if not st.session_state.get('is_rec', False):
@@ -191,6 +254,7 @@ def update_style_logic():
         if s_key in STYLES:
             st.session_state.sag_slider = STYLES[s_key]["sag"]
             st.session_state.bias_slider = STYLES[s_key]["bias"]
+    sync_to_url() # Force Save
 
 def update_rec_logic():
     if st.session_state.is_rec:
@@ -200,9 +264,12 @@ def update_rec_logic():
     else:
         st.session_state.style_select = st.session_state.get("previous_style", "Trail")
         update_style_logic()
+    sync_to_url() # Force Save
 
-# Initialize State
+# Initialize State (Load Game)
 initialize_state()
+# Save State (Ensure URL matches loaded state immediately)
+sync_to_url()
 
 # CSS / Styling
 COLORS = {
