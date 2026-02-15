@@ -375,7 +375,7 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     rear_load_kg = sprung_mass_kg * (effective_bias_pct / 100.0)
     rear_load_lbs = rear_load_kg * 2.20462
     
-    final_sag_pct = 35.0 if is_recovery else sag_target
+    final_sag_pct = sag_target
     sag_mm = CONFIG["SHOCK_STROKE_MM"] * (final_sag_pct / 100.0)
     lr_at_sag = CONFIG["LEV_RATIO_START"] - (CONFIG["LEV_RATIO_COEFF"] * sag_mm)
     
