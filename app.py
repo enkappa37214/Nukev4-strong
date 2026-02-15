@@ -153,13 +153,13 @@ DIAGNOSTIC_PROBLEMS = {
 # --- STATE MANAGEMENT ---
 DEFAULTS = {
     "rider_kg": 72.0,
-    "bike_kg": 15.1,
-    "unsprung_kg": 4.27,
+    "bike_kg": 16.5,
+    "unsprung_kg": 5.5,
     "is_rec": False,
     "chainring_size": 32,
     "temperature": "Standard (>10°C)",
     "trail_condition": "Dry",
-    "altitude": 500,
+    "altitude": 250,
     "style_select": "Trail",
     "previous_style": "Trail",
     "sag_slider": 33.0,
