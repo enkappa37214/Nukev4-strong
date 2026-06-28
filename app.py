@@ -3,6 +3,8 @@ import pandas as pd
 from fpdf import FPDF
 import locale
 import streamlit.components.v1 as components 
+from datetime import datetime  # Add this line
+
 
 # Set locale for consistent number formatting
 try:
@@ -972,13 +974,18 @@ st.caption("Calculations valid for Nukeproof Mega v4 (Size L) + Formula Selva V 
 st.markdown("---")
 try:
     pdf_bytes = generate_pdf(res)
+    
+    # Generate dynamic filename
+    current_date = datetime.now().strftime("%Y-%m-%d") 
+    unique_number = datetime.now().strftime("%H%M%S") 
+    dynamic_filename = f"{current_date}_{unique_number}_nukeproof_setup_report.pdf"
+
     st.download_button(
         label="Export PDF Report",
         data=pdf_bytes,
-        file_name="nukeproof_setup_report.pdf",
+        file_name=dynamic_filename,
         mime="application/pdf",
         type="primary"
     )
 except Exception as e:
     st.error(f"PDF Generation Error: {e}")
-
