@@ -522,15 +522,26 @@ def calculate_setup(rider_kg, bike_kg, unsprung_kg, style_key, sag_target, bias_
     if is_recovery: base_lsc = 17 
     lsc_clicks = max(1, min(CONFIG["COMP_CLICKS_SHOCK"], base_lsc))
 
-    # Fork
+        # Fork
     base_psi = CONFIG["FORK_PSI_BASE_OFFSET"] + ((rider_kg - 75) * CONFIG["FORK_PSI_PER_KG"])
     alt_penalty = (altitude / 1000.0) * CONFIG["ALTITUDE_PSI_DROP"]
     neopos_correction = int(fork_ramp_delta / 3) 
-    final_neopos_count = max(0, min(3, neopos_installed - neopos_correction))
-    effective_neopos_delta = final_neopos_count - neopos_rec
-    psi_safety = 0
-    if effective_neopos_delta < 0: psi_safety = abs(effective_neopos_delta) * 3.0
     
+    # 1. Enforce physical hardware locks
+    if neopos_select == "Auto":
+        final_neopos_count = max(0, min(3, neopos_installed - neopos_correction))
+    else:
+        final_neopos_count = neopos_installed # Respect explicit user input
+        
+    # 2. Calculate pneumatic deficit
+    ideal_neopos_target = max(0, min(3, neopos_rec - neopos_correction))
+    effective_neopos_delta = final_neopos_count - ideal_neopos_target
+    
+    # 3. Apply PSI safety compensation
+    psi_safety = 0
+    if effective_neopos_delta < 0: 
+        psi_safety = abs(effective_neopos_delta) * 3.0
+        
     raw_psi = base_psi - (final_neopos_count * CONFIG["NEOPOS_PSI_DROP"]) - alt_penalty + psi_safety
     if is_recovery: raw_psi = max(40, raw_psi * 0.9)
 
