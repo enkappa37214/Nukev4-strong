@@ -772,7 +772,7 @@ with c2:
     st.subheader("Formula Selva V (Air)")
     
     fc1, fc2 = st.columns(2)
-        with fc1:
+    with fc1:
         # Manually define the list to enforce soft-to-hard order
         ordered_fork_valves = [
             "Auto", 
@@ -796,9 +796,13 @@ with c2:
             format_func=format_fork_valve,
             key="valve_override"
         )
-
     with fc2:
-        neopos_select = st.select_slider("Neopos (Installed)", options=["Auto", "0", "1", "2", "3"], help=f"Auto recommends: {rec_neopos_peek}.", key="neopos_override")
+        neopos_select = st.select_slider(
+            "Neopos (Installed)", 
+            options=["Auto", "0", "1", "2", "3"], 
+            help=f"Auto recommends: {rec_neopos_peek}.", 
+            key="neopos_override"
+        )
 
 # --- RUN CALCULATION ---
 # [FIXED] Using correct variable names from UI
