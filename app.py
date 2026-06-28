@@ -967,3 +967,18 @@ def generate_pdf(data):
     return pdf.output(dest="S").encode("latin-1")
 
 st.caption("Calculations valid for Nukeproof Mega v4 (Size L) + Formula Selva V 2025 + Formula Mod 2025")
+
+# --- PDF EXPORT BUTTON ---
+st.markdown("---")
+try:
+    pdf_bytes = generate_pdf(res)
+    st.download_button(
+        label="Export PDF Report",
+        data=pdf_bytes,
+        file_name="nukeproof_setup_report.pdf",
+        mime="application/pdf",
+        type="primary"
+    )
+except Exception as e:
+    st.error(f"PDF Generation Error: {e}")
+
