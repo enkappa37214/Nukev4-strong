@@ -63,13 +63,16 @@ STYLES = {
 }
 
 FORK_VALVE_SPECS = {
-    "Purple": {"support": 2, "ramp": 2}, 
-    "Blue":   {"support": 3, "ramp": 7}, 
-    "Gold":   {"support": 5, "ramp": 5}, 
-    "Orange": {"support": 7, "ramp": 6}, 
-    "Green":  {"support": 8, "ramp": 8}, 
-    "Bronze": {"support": 2, "ramp": 9}, 
-    "Red":    {"support": 6, "ramp": 7}, 
+    # Linear / Support Series (Soft to Hard)
+    "Purple":   {"support": 2, "ramp": 2}, 
+    "Gold":     {"support": 5, "ramp": 5}, 
+    "Orange":   {"support": 7, "ramp": 6}, 
+    "Green":    {"support": 8, "ramp": 8}, 
+    "Titanium": {"support": 10, "ramp": 10}, 
+    # Progressive / Traction Series (Soft to Hard)
+    "Bronze":   {"support": 2, "ramp": 9}, 
+    "Blue":     {"support": 3, "ramp": 7}, 
+    "Red":      {"support": 6, "ramp": 7}, 
 }
 
 SHOCK_VALVE_SPECS = {
@@ -769,9 +772,31 @@ with c2:
     st.subheader("Formula Selva V (Air)")
     
     fc1, fc2 = st.columns(2)
-    with fc1:
-        fork_valve_options = ["Auto"] + list(FORK_VALVE_SPECS.keys())
-        fork_valve_select = st.selectbox("CTS Valve (Installed)", options=fork_valve_options, key="valve_override")
+        with fc1:
+        # Manually define the list to enforce soft-to-hard order
+        ordered_fork_valves = [
+            "Auto", 
+            "Purple", "Gold", "Orange", "Green", "Titanium", 
+            "Bronze", "Blue", "Red"
+        ]
+        
+        # Function to append the categories visually in the dropdown
+        def format_fork_valve(val):
+            if val == "Auto": 
+                return "Auto"
+            elif val in ["Purple", "Gold", "Orange", "Green", "Titanium"]:
+                return f"Linear: {val}"
+            elif val in ["Bronze", "Blue", "Red"]:
+                return f"Progressive: {val}"
+            return val
+
+        fork_valve_select = st.selectbox(
+            "CTS Valve (Installed)", 
+            options=ordered_fork_valves, 
+            format_func=format_fork_valve,
+            key="valve_override"
+        )
+
     with fc2:
         neopos_select = st.select_slider("Neopos (Installed)", options=["Auto", "0", "1", "2", "3"], help=f"Auto recommends: {rec_neopos_peek}.", key="neopos_override")
 
