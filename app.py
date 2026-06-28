@@ -865,49 +865,105 @@ with c2:
     if is_rec:
         st.warning("⚠️ Recovery Safety: Neopos reduced.")
 
+
 # PDF Generation
 def generate_pdf(data):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(200, 10, "Nukeproof Mega v4 Setup Report", ln=True, align='C')
-    pdf.set_font("Arial", size=11); pdf.ln(10)
+    pdf.set_font("Arial", size=11)
+    pdf.ln(5)
     
-    pdf.cell(200, 8, f"Rider: {rider_kg}kg | Bike: {bike_kg}kg", ln=True)
-    pdf.cell(200, 8, f"Style: {style_key} | Temp: {temperature} | Cond: {trail_condition}", ln=True)
-    if problem_select != "None (Fresh Setup)":
+    # 1. Base Configuration
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(200, 8, "Configuration & Environment", ln=True)
+    pdf.set_font("Arial", size=10)
+    pdf.cell(200, 6, f"Rider: {rider_kg}kg | Bike: {bike_kg}kg | Unsprung: {unsprung_kg}kg", ln=True)
+    pdf.cell(200, 6, f"Style: {style_key} | Temp: {temperature} | Cond: {trail_condition}", ln=True)
+    pdf.cell(200, 6, f"Altitude: {altitude}m | Chainring: {chainring_size}T | Recovery: {'Active' if is_rec else 'Inactive'}", ln=True)
+    
+    # 2. Kinematics & Targets
+    pdf.ln(4)
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(200, 8, "Kinematics & Targets", ln=True)
+    pdf.set_font("Arial", size=10)
+    pdf.cell(200, 6, f"Target Sag: {target_sag}% | Rear Bias: {target_bias}%", ln=True)
+    pdf.cell(200, 6, f"Estimated Actual Sag: {data['sag_actual']:.1f}%", ln=True)
+    
+    # 3. Tires
+    pdf.ln(4)
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(200, 8, "Tires & Wheels", ln=True)
+    pdf.set_font("Arial", size=10)
+    pdf.cell(200, 6, f"Front: {data['tire_front']:.1f} psi | Casing: {tire_casing_front}", ln=True)
+    pdf.cell(200, 6, f"Rear: {data['tire_rear']:.1f} psi | Casing: {tire_casing_rear}", ln=True)
+    pdf.cell(200, 6, f"Width: {tire_width} | Inserts: {tire_insert} | Tubeless: {'Yes' if is_tubeless else 'No'}", ln=True)
+
+    # 4. Diagnostics & Warnings
+    if problem_select != "None (Fresh Setup)" or data['hardware_msg'] or data['diag_msg']:
+        pdf.ln(4)
+        pdf.set_font("Arial", 'B', 12)
         pdf.set_text_color(200, 0, 0)
-        pdf.cell(200, 8, f"Diagnostic Fix: {problem_select}", ln=True)
+        pdf.cell(200, 8, "Diagnostics & Warnings", ln=True)
+        pdf.set_font("Arial", size=10)
+        if problem_select != "None (Fresh Setup)":
+            pdf.multi_cell(0, 6, f"Reported Issue: {problem_select}")
+        if data['diag_msg']:
+            pdf.multi_cell(0, 6, f"Action: {data['diag_msg']}")
+        if data['hardware_msg']:
+            clean_msg = data['hardware_msg'].replace('⚠️', '').replace('**', '').strip()
+            pdf.multi_cell(0, 6, f"Hardware Warning: {clean_msg}")
         pdf.set_text_color(0, 0, 0)
-    
-    pdf.ln(5)
-    pdf.set_font("Arial", 'B', 12); pdf.cell(200, 10, "Tires (Inflation Targets)", ln=True)
+        
+    # 5. Formula MOD
+    pdf.ln(4)
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(200, 8, "Formula MOD (Rear Shock)", ln=True)
     pdf.set_font("Arial", size=10)
-    pdf.cell(200, 8, f"Front: {data['tire_front']:.1f} psi", ln=True)
-    pdf.cell(200, 8, f"Rear: {data['tire_rear']:.1f} psi", ln=True)
+    pdf.cell(200, 6, f"Spring Rate: {data['active_rate']} lbs (Ideal: {data['mod_rate']} lbs)", ln=True)
+    pdf.cell(200, 6, f"CTS Valve: {data['shock_cts']} (Ideal: {data['shock_cts_ideal']})", ln=True)
+    
+    reb_str = f"{data['shock_reb']} clicks"
+    total_shock_reb_adj = data['shock_reb_adj'] + data['diag_shock_reb_val']
+    if total_shock_reb_adj != 0:
+        reb_str += f" (includes {total_shock_reb_adj:+d} offset)"
+    pdf.cell(200, 6, f"Rebound: {reb_str}", ln=True)
+    
+    lsc_str = f"{data['shock_lsc']} clicks"
+    total_shock_lsc_adj = data['shock_lsc_adj'] + data['diag_shock_lsc_val']
+    if total_shock_lsc_adj != 0:
+        lsc_str += f" (includes {total_shock_lsc_adj:+d} offset)"
+    pdf.cell(200, 6, f"Compression: {lsc_str}", ln=True)
 
-    pdf.ln(5)
-    pdf.set_font("Arial", 'B', 12); pdf.cell(200, 10, "Formula MOD", ln=True)
+    # 6. Formula Selva V
+    pdf.ln(4)
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(200, 8, "Formula Selva V (Fork)", ln=True)
     pdf.set_font("Arial", size=10)
-    pdf.cell(200, 8, f"Rate: {data['active_rate']} lbs | Valve: {data['shock_cts']}", ln=True)
-    pdf.cell(200, 8, f"Rebound: {data['shock_reb']} clicks", ln=True)
-    pdf.cell(200, 8, f"Compression: {data['shock_lsc']} clicks", ln=True)
+    pdf.cell(200, 6, f"Pressure: {data['fork_psi']:.1f} psi", ln=True)
+    pdf.cell(200, 6, f"Neopos: {data['fork_neopos']} installed (Recommended: {data['neopos_rec']})", ln=True)
+    pdf.cell(200, 6, f"CTS Valve: {data['fork_cts']}", ln=True)
     
-    pdf.ln(5)
-    pdf.set_font("Arial", 'B', 12); pdf.cell(200, 10, "Formula Selva V", ln=True)
-    pdf.set_font("Arial", size=10)
-    pdf.cell(200, 8, f"Pressure: {data['fork_psi']:.1f} psi", ln=True)
-    pdf.cell(200, 8, f"Neopos: {data['fork_neopos']} | Valve: {data['fork_cts']}", ln=True)
-    pdf.cell(200, 8, f"Rebound: {data['fork_reb']} clicks", ln=True)
-    pdf.cell(200, 8, f"Compression: {data['fork_lsc']} clicks", ln=True)
+    fork_reb_str = f"{data['fork_reb']} clicks"
+    total_fork_reb_adj = data['fork_reb_adj'] + data['diag_fork_reb_val']
+    if total_fork_reb_adj != 0:
+        fork_reb_str += f" (includes {total_fork_reb_adj:+d} offset)"
+    pdf.cell(200, 6, f"Rebound: {fork_reb_str}", ln=True)
     
+    fork_lsc_str = f"{data['fork_lsc']} clicks"
+    total_fork_lsc_adj = data['fork_lsc_adj'] + data['diag_fork_lsc_val']
+    if total_fork_lsc_adj != 0:
+        fork_lsc_str += f" (includes {total_fork_lsc_adj:+d} offset)"
+    pdf.cell(200, 6, f"Compression: {fork_lsc_str}", ln=True)
+    
+    # 7. Kinematic Notes
+    if data['kinematic_notes']:
+        pdf.ln(4)
+        pdf.set_font("Arial", 'I', 10)
+        notes_str = ", ".join(data['kinematic_notes'])
+        pdf.multi_cell(0, 6, f"Applied Kinematic Adjustments: {notes_str}")
+
     return pdf.output(dest="S").encode("latin-1")
-
-if st.button("Export PDF Report"):
-    try:
-        pdf_bytes = generate_pdf(res)
-        st.download_button("Download PDF", pdf_bytes, "setup_report.pdf", "application/pdf")
-    except Exception as e:
-        st.error(f"PDF Error: {e}")
 
 st.caption("Calculations valid for Nukeproof Mega v4 (Size L) + Formula Selva V 2025 + Formula Mod 2025")
